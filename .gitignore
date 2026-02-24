@@ -1,0 +1,9 @@
+# Byte-compiled / optimized / tied files:
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+*.pytest_cache/
+
+# IDE
+.idea
