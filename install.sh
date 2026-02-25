@@ -65,7 +65,7 @@ install_skill() {
 
     # Clone repository
     log_info "Cloning repository: $REPO_URL"
-    git clone "$REPO_URL" "$TMP_DIR"
+    git clone "$REPO_URL" "$TMP_DIR" > /dev/null 2>&1
 
     # Remove existing skill installation
     if [[ -d "$TARGET_DIR" ]]; then
