@@ -82,6 +82,52 @@ def analyze_python(path):
     return complexities
 
 
+def analyze_python_with_modules(path):
+    """
+    Analyze Python code with module-level metrics.
+
+    Returns:
+        dict: A dictionary containing modules and functions data
+    """
+    # Get function-level analysis using existing function
+    functions_data = analyze_python(path)
+
+    # Collect module-level data
+    modules_data = []
+
+    for func_data in functions_data:
+        file_path = func_data["file"]
+
+        # Check if module already exists in the list
+        existing_module = next((m for m in modules_data if m["file"] == file_path), None)
+
+        if existing_module:
+            # Update existing module data
+            existing_module["function_count"] += 1
+            existing_module["total_complexity"] += func_data["complexity"]
+            existing_module["max_complexity"] = max(existing_module["max_complexity"], func_data["complexity"])
+        else:
+            # Create new module entry
+            loc = count_lines(file_path)
+            modules_data.append({
+                "file": file_path,
+                "loc": loc,
+                "total_complexity": func_data["complexity"],
+                "avg_complexity": func_data["complexity"],  # Will be recalculated later
+                "function_count": 1,
+                "max_complexity": func_data["complexity"]
+            })
+
+    # Calculate average complexity for each module
+    for module in modules_data:
+        module["avg_complexity"] = module["total_complexity"] / module["function_count"]
+
+    return {
+        "modules": modules_data,
+        "functions": functions_data
+    }
+
+
 def analyze_go(path):
     """
     Go complexity analyzer с top_complexities.
@@ -288,15 +334,57 @@ console.log(JSON.stringify(output));
 # UTILS
 # -----------------------
 
-def count_lines(file_path):
-    """Count lines of code in a file"""
+def count_lines(file_path: str) -> int:
+    """
+    Count lines of code in a file.
+
+    This function is memory efficient and doesn't load the entire file into memory.
+    It raises exceptions for invalid inputs and file access errors.
+
+    Args:
+        file_path (str): Path to the file to count lines in
+
+    Returns:
+        int: Number of lines in the file
+
+    Raises:
+        TypeError: If file_path is not a string
+        FileNotFoundError: If the file doesn't exist
+        IsADirectoryError: If the path points to a directory
+        PermissionError: If the file cannot be read due to permissions
+        OSError: For other file-related errors
+
+    Examples:
+        >>> count_lines("example.py")
+        42
+    """
+    # Input validation
+    if not isinstance(file_path, str):
+        raise TypeError(f"file_path must be a string, got {type(file_path).__name__}")
+
+    if not file_path.strip():
+        raise ValueError("file_path cannot be empty or whitespace")
+
+    # Check if file exists and is accessible
     if not os.path.exists(file_path):
-        return 0
+        raise FileNotFoundError(f"File not found: {file_path}")
 
-    with open(file_path, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
+    if os.path.isdir(file_path):
+        raise IsADirectoryError(f"Path is a directory, not a file: {file_path}")
 
-    return len(lines)
+    # Count lines efficiently without loading entire file into memory
+    try:
+        line_count = 0
+        with open(file_path, 'r', encoding='utf-8') as file:
+            for line in file:
+                line_count += 1
+        return line_count
+    except PermissionError:
+        raise PermissionError(f"Permission denied when reading file: {file_path}")
+    except UnicodeDecodeError:
+        raise ValueError(f"File is not valid UTF-8 encoded: {file_path}")
+    except OSError as e:
+        raise OSError(f"Error reading file {file_path}: {e}")
 
 
 # -----------------------
