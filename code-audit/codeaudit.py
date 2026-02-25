@@ -8,6 +8,10 @@ import tempfile
 import subprocess
 from pathlib import Path
 
+# Constants for weights
+FUNCTION_WEIGHT = 0.7
+MODULE_WEIGHT = 0.3
+
 
 # -----------------------
 # LANGUAGE DETECTION
@@ -942,21 +946,67 @@ def compute_metrics_with_modules(modules_data, functions_data):
     Returns:
         dict: Dictionary with computed metrics including function metrics,
                module metrics, and final weighted refactoring pressure
+
+    Raises:
+        TypeError: If inputs are not of expected type
+        ValueError: If inputs contain invalid values
     """
-    # Calculate function-level metrics
-    function_metrics = compute_metrics(functions_data)
+    # Input validation
+    if not isinstance(modules_data, list):
+        raise TypeError(f"modules_data must be a list, got {type(modules_data).__name__}")
+
+    if not isinstance(functions_data, list):
+        raise TypeError(f"functions_data must be a list, got {type(functions_data).__name__}")
+
+    # Validate modules_data structure
+    for i, module in enumerate(modules_data):
+        if not isinstance(module, dict):
+            raise TypeError(f"Module at index {i} must be a dictionary, got {type(module).__name__}")
+        # Check required fields with None handling
+        if module.get("file") is None:
+            raise ValueError(f"Module at index {i} is missing required field: file")
+
+    # Validate functions_data structure
+    for i, func in enumerate(functions_data):
+        if not isinstance(func, dict):
+            raise TypeError(f"Function at index {i} must be a dictionary, got {type(func).__name__}")
+        # Check required fields with None handling
+        if func.get("function") is None or func.get("file") is None or func.get("complexity") is None:
+            raise ValueError(f"Function at index {i} is missing required fields: function, file, or complexity")
+
+    # Calculate function-level metrics with error handling
+    try:
+        function_metrics = compute_metrics(functions_data)
+    except Exception as e:
+        raise RuntimeError(f"Failed to compute function metrics: {str(e)}") from e
 
     # Calculate module-level metrics
     if not modules_data:
         module_rp = 0
         top_modules = []
     else:
-        # Calculate module RP using the MRP formula
-        module_rp = calculate_mrp({
-            "total_complexity": sum(m.get("total_complexity", 0) for m in modules_data),
-            "max_complexity": max(m.get("max_complexity", 0) for m in modules_data),
-            "loc": sum(m.get("loc", 0) for m in modules_data)
-        })
+        # Calculate module RP with error handling
+        try:
+            # Convert total_complexity to int to handle potential string values
+            total_complexity = 0
+            for m in modules_data:
+                try:
+                    total_complexity += int(m.get("total_complexity", 0))
+                except (TypeError, ValueError):
+                    # Skip invalid values
+                    pass
+
+            module_rp = calculate_mrp({
+                "total_complexity": total_complexity,
+                "max_complexity": max(int(m.get("max_complexity", 0)) for m in modules_data),
+                "loc": sum(int(m.get("loc", 0)) for m in modules_data)
+            })
+        except Exception as e:
+            # If calculate_mrp fails, use default value of 0
+            module_rp = 0
+            # Log error would go here in production
+            # import warnings
+            # warnings.warn(f"Failed to calculate module RP: {str(e)}")
 
         # Get top 10 most complex modules
         top_modules = sorted(
@@ -965,12 +1015,13 @@ def compute_metrics_with_modules(modules_data, functions_data):
             reverse=True
         )[:10]
 
-    # Calculate final RP using weighted average (70% function, 30% module)
-    final_rp = int(0.7 * function_metrics["refactoring_pressure"] + 0.3 * module_rp)
+    # Calculate final RP using weighted average with constants
+    final_rp = int(FUNCTION_WEIGHT * function_metrics["refactoring_pressure"] + MODULE_WEIGHT * module_rp)
 
     return {
         "function_metrics": {
             "refactoring_pressure": function_metrics["refactoring_pressure"],
+            "max_complexity": function_metrics["max_complexity"],
             "top_complexities": function_metrics["top_complexities"]
         },
         "module_metrics": {
@@ -978,6 +1029,178 @@ def compute_metrics_with_modules(modules_data, functions_data):
             "top_modules": top_modules
         },
         "final_rp": final_rp
+    }
+
+
+def generate_summary(metrics, function_metrics, module_metrics, complexity_threshold=10):
+    """
+    Generate a concise summary of the code quality analysis.
+
+    Args:
+        metrics: Overall metrics dictionary
+        function_metrics: Function-level metrics
+        module_metrics: Module-level metrics
+
+    Returns:
+        str: Summary string (max 150 characters)
+    """
+    if not metrics["function_metrics"]["top_complexities"]:
+        return "No complex functions found. Code looks good!"
+
+    max_func_complexity = function_metrics["max_complexity"]
+    max_module_complexity = max(m.get("max_complexity", 0) for m in module_metrics["top_modules"])
+
+    if max_func_complexity >= complexity_threshold or max_module_complexity >= complexity_threshold:
+        return f"High complexity detected: max function {max_func_complexity}, module {max_module_complexity}"
+    elif max_func_complexity >= 6:
+        return f"Moderate complexity: consider refactoring {max_func_complexity}-function"
+    else:
+        return "Low complexity code - well structured"
+
+
+def generate_instructions(metrics, function_metrics, module_metrics, max_instructions=10):
+    """
+    Generate refactoring instructions based on function and module metrics.
+
+    Args:
+        metrics: Overall metrics dictionary
+        function_metrics: Function-level metrics
+        module_metrics: Module-level metrics
+        max_instructions: Maximum number of instructions to return
+
+    Returns:
+        list: List of instruction strings
+    """
+    instructions = []
+
+    # Function-level instructions
+    top_functions = function_metrics["top_complexities"][:5]
+    for func in top_functions:
+        if func["complexity"] >= 15:
+            instructions.append(f"Function '{func['function']}' ({func['complexity']}) - consider breaking down")
+        elif func["complexity"] >= 10:
+            instructions.append(f"Function '{func['function']}' ({func['complexity']}) - simplify logic")
+
+    # Module-level instructions
+    top_modules = module_metrics["top_modules"][:3]
+    for module in top_modules:
+        if module.get("module_rp", 0) >= 70:
+            instructions.append(f"Module {module['file']} - high refactoring pressure ({module.get('module_rp', 0)})")
+        elif module.get("avg_complexity", 0) >= 10:
+            instructions.append(f"Module {module['file']} - simplify average complexity ({module.get('avg_complexity', 0):.1f})")
+
+    # Instructions for the overall project
+    if metrics["final_rp"] >= 75:
+        instructions.append("Overall project needs refactoring attention")
+    elif metrics["final_rp"] >= 50:
+        instructions.append("Consider refactoring high-complexity areas")
+    else:
+        instructions.append("Good code quality - maintain current standards")
+
+    return instructions[:max_instructions]
+
+
+def determine_status(metrics, function_metrics, module_metrics):
+    """
+    Determine overall status based on complexity metrics.
+
+    Args:
+        metrics: Overall metrics dictionary
+        function_metrics: Function-level metrics
+        module_metrics: Module-level metrics
+
+    Returns:
+        str: Status ("ok", "warning", "critical")
+    """
+    max_func = function_metrics["max_complexity"]
+    max_module = max(m.get("max_complexity", 0) for m in module_metrics["top_modules"])
+    final_rp = metrics["final_rp"]
+
+    if final_rp >= 75 or max_func >= 20 or max_module >= 20:
+        return "critical"
+    elif final_rp >= 50 or max_func >= 15 or max_module >= 15:
+        return "warning"
+    else:
+        return "ok"
+
+
+def scan_with_module_analysis(project_path, language):
+    """
+    Analyze project with module-level analysis and return structured output.
+
+    Args:
+        project_path (str): Path to the project directory
+        language (str): Programming language ("python", "go", "javascript")
+
+    Returns:
+        dict: Complete analysis result with both function and module metrics
+    """
+    # Get analysis data based on language
+    if language == "python":
+        analysis_data = analyze_python_with_modules(project_path)
+    elif language == "go":
+        analysis_data = analyze_go_with_modules(project_path)
+    elif language == "javascript":
+        analysis_data = analyze_js_with_modules(project_path)
+    else:
+        raise ValueError(f"Unsupported language: {language}")
+
+    # Compute metrics
+    metrics = compute_metrics_with_modules(
+        analysis_data["modules"],
+        analysis_data["functions"]
+    )
+
+    # Generate additional outputs
+    summary = generate_summary(
+        metrics,
+        metrics["function_metrics"],
+        metrics["module_metrics"]
+    )
+
+    instructions = generate_instructions(
+        metrics,
+        metrics["function_metrics"],
+        metrics["module_metrics"]
+    )
+
+    # Determine status
+    status = determine_status(
+        metrics,
+        metrics["function_metrics"],
+        metrics["module_metrics"]
+    )
+
+    # Get risk level based on final RP
+    rl = risk_level(metrics["final_rp"])
+
+    # Prepare top functions and modules
+    top_functions = metrics["function_metrics"]["top_complexities"]
+    top_modules = []
+
+    for module in metrics["module_metrics"]["top_modules"]:
+        module_info = {
+            "file": module["file"],
+            "loc": module.get("loc", 0),
+            "total_complexity": module.get("total_complexity", 0),
+            "avg_complexity": module.get("avg_complexity", 0),
+            "function_count": module.get("function_count", 0),
+            "max_complexity": module.get("max_complexity", 0),
+            "module_rp": module.get("module_rp", 0)
+        }
+        top_modules.append(module_info)
+
+    return {
+        "language": language,
+        "status": status,
+        "risk_level": rl,
+        "rp": metrics["final_rp"],
+        "function_rp": metrics["function_metrics"]["refactoring_pressure"],
+        "module_rp": metrics["module_metrics"]["module_rp"],
+        "top_function_complexities": top_functions,
+        "top_file_complexities": top_modules,
+        "instructions": instructions,
+        "summary": summary
     }
 
 
