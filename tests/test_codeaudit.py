@@ -5,7 +5,6 @@ import os
 import json
 import subprocess
 import sys
-from pathlib import Path
 
 # Добавляем путь к основному модулю
 sys.path.insert(0, os.path.dirname(__file__) + '/../code-audit')
