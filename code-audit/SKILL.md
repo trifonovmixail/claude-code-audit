@@ -22,24 +22,28 @@ Your main tool is the CLI `codeaudit`, which outputs JSON with code complexity m
   *Node ≥14
   *acorn `npm install -g acorn acorn-walk`
 
-**Dependency check for running codeaudit:**
+**Dependency check:**
 
-1. Python:
-   - Verify Python is installed: python3 --version
-   - Verify radon is installed: python3 -m radon --version
+Use the built-in `check-deps` command to automatically detect and check dependencies:
 
-2. Golang:
-   - Verify Go is installed: go version
-   - Ensure version is ≥1.16
+```bash
+codeaudit.py check-deps <path_to_repo> --format json
+```
 
-3. Node.js / JS:
-   - Verify Node.js: node -v (must be ≥14)
-   - Verify global modules:
-       - acorn: node -e "require('acorn')"
-       - acorn-walk: node -e "require('acorn-walk')"
-   - ESLint is not required
+This command will:
+1. Detect all languages used in the project (Python, Go, JavaScript/TypeScript)
+2. Check if required dependencies are installed
+3. Return JSON with dependency status
 
-If any check fails, the agent should provide instructions on how to install the missing packages.
+**Auto-install missing dependencies:**
+
+If any check fails, use `--install` flag or provide installation instructions.
+
+```bash
+codeaudit.py check-deps <path_to_repo> --install
+```
+
+This will automatically install missing dependencies for the detected languages.
 
 ## Usage
 
@@ -56,7 +60,33 @@ codeaudit.py [ARGUMENTS]
 
 ---
 
-## 1. Running the Scan
+## 1. Checking Dependencies
+
+First, check if all required dependencies are installed:
+
+```bash
+codeaudit.py check-deps <path_to_repo> --format json
+```
+
+Example JSON output:
+```json
+{
+  "languages_found": ["python", "javascript"],
+  "dependencies": {
+    "python": {"name": "radon", "installed": true},
+    "javascript": {"name": "acorn + acorn-walk", "installed": false}
+  },
+  "missing_dependencies": ["javascript"],
+  "all_dependencies_installed": false
+}
+```
+
+**Auto-install missing dependencies:**
+```bash
+codeaudit.py check-deps <path_to_repo> --install
+```
+
+## 2. Running the Scan
 
 To analyze a repository, run:
 
@@ -198,12 +228,41 @@ Always return strictly the following JSON:
 
 ## 8. Agent Steps
 
-1. Determine the project language
-2. Run `codeaudit` with `--threshold` and `-v`
-3. Read JSON
-4. Check `threshold_exceeded`
-5. Sort top_complexities
-6. Generate instructions (≤10, ≤120 characters)
-7. Generate summary (≤150 characters)
-8. Combine results for multi-language projects (max RP)
-9. Return JSON strictly in the schema: status, risk_level, rp, instructions, summary
+1. **Check Dependencies**
+   - Run `codeaudit check-deps <path>` to verify all dependencies are installed
+   - If missing dependencies exist and `--install` is available, use it
+   - Proceed only if all required dependencies are installed
+
+2. **Determine Project Languages**
+   - Use `check-deps` output to identify all languages in the project
+   - For single-language projects, proceed with that language
+   - For multi-language projects, plan to analyze each language
+
+3. **Run Analysis**
+   - Run `codeaudit scan <path> --format json --threshold <value> -v` for each language
+   - Read and parse the JSON output
+
+4. **Check Threshold**
+   - Check `threshold_exceeded` flag in the JSON
+   - Determine if code is too complex (status = critical/warning) or OK (status = ok)
+
+5. **Sort Functions**
+   - Sort `top_complexities` by descending complexity
+   - Select top functions for refactoring recommendations
+
+6. **Generate Instructions**
+   - Create clear, actionable instructions (≤10 items, ≤120 characters each)
+   - Focus on: splitting functions, reducing nesting, extracting code, simplifying logic
+
+7. **Generate Summary**
+   - Create a concise summary (≤150 characters)
+   - Mention main problematic functions and risk level
+
+8. **Handle Multi-Language Projects**
+   - Use maximum RP across all languages
+   - Merge instructions from all languages
+   - Create combined summary
+
+9. **Return JSON**
+   - Follow the strict schema: status, risk_level, rp, instructions, summary
+   - No extra fields allowed

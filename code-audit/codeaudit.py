@@ -13,20 +13,42 @@ from pathlib import Path
 # LANGUAGE DETECTION
 # -----------------------
 
-def detect_language(path):
-    extensions = set()
+def detect_languages(path):
+    """Обнаруживает все языки в проекте"""
+    languages = set()
 
     for root, _, files in os.walk(path):
         for f in files:
-            extensions.add(Path(f).suffix)
+            ext = Path(f).suffix.lower()
+            if ext == ".py":
+                languages.add("python")
+            elif ext == ".go":
+                languages.add("go")
+            elif ext in (".js", ".ts"):
+                languages.add("javascript")
 
-    if ".go" in extensions:
-        return "go"
-    if ".py" in extensions:
-        return "python"
-    if ".js" in extensions or ".ts" in extensions:
-        return "js"
-    return None
+    return list(languages)
+
+
+def detect_language(path):
+    """Обнаруживает основной язык (для обратной совместимости)"""
+    languages = detect_languages(path)
+    if not languages:
+        return None
+
+    # Возвращаем самый распространенный язык
+    lang_counts = {}
+    for root, _, files in os.walk(path):
+        for f in files:
+            ext = Path(f).suffix.lower()
+            if ext == ".py":
+                lang_counts["python"] = lang_counts.get("python", 0) + 1
+            elif ext == ".go":
+                lang_counts["go"] = lang_counts.get("go", 0) + 1
+            elif ext in (".js", ".ts"):
+                lang_counts["javascript"] = lang_counts.get("javascript", 0) + 1
+
+    return max(lang_counts, key=lang_counts.get) if lang_counts else None
 
 
 # -----------------------
@@ -338,60 +360,231 @@ def risk_level(rp):
 
 
 # -----------------------
+# DEPENDENCY MANAGEMENT
+# -----------------------
+
+def check_python_deps():
+    """Проверяет наличие radon"""
+    try:
+        result = subprocess.run(["radon", "--version"], capture_output=True, text=True)
+        return result.returncode == 0
+    except:
+        return False
+
+
+def check_js_deps():
+    """Проверяет наличие acorn и acorn-walk"""
+    try:
+        # Проверяем через npm list
+        result = subprocess.run(
+            ["npm", "list", "-g", "acorn", "acorn-walk"],
+            capture_output=True,
+            text=True
+        )
+        return "acorn" in result.stdout and "acorn-walk" in result.stdout
+    except:
+        return False
+
+
+def check_go_deps():
+    """Проверяет Go (встроенный, всегда доступен)"""
+    try:
+        result = subprocess.run(["go", "version"], capture_output=True, text=True)
+        return result.returncode == 0
+    except:
+        return False
+
+
+def check_dependencies(languages):
+    """Проверяет все зависимости для указанных языков"""
+    deps_status = {
+        "python": {"name": "radon", "installed": check_python_deps()},
+        "go": {"name": "Go (built-in)", "installed": check_go_deps()},
+        "javascript": {"name": "acorn + acorn-walk", "installed": check_js_deps()}
+    }
+
+    missing_deps = []
+    for lang in languages:
+        if lang in deps_status:
+            if not deps_status[lang]["installed"]:
+                missing_deps.append(lang)
+
+    return deps_status, missing_deps
+
+
+def print_dependency_status(deps_status, missing_deps, languages_found):
+    """Красиво выводит статус зависимостей"""
+    print("\n🔍 CODEAUDIT - DEPENDENCY CHECK")
+    print("=" * 50)
+    print(f"📁 Found languages: {', '.join(languages_found) or 'None'}")
+    print()
+
+    print("📦 DEPENDENCY STATUS:")
+    print("-" * 30)
+
+    for lang, info in deps_status.items():
+        if lang in languages_found:
+            status_icon = "✅" if info["installed"] else "❌"
+            print(f"{status_icon} {lang.title()}: {info['name']}")
+            if not info["installed"]:
+                print(f"   → Need to install")
+        else:
+            status_icon = "⏭️ "
+            print(f"{status_icon} {lang.title()}: {info['name']} (not needed)")
+
+    print()
+
+    if missing_deps:
+        print("🚨 MISSING DEPENDENCIES:")
+        print("-" * 25)
+        for lang in missing_deps:
+            if lang == "python":
+                print(f"• Install radon: pip install radon")
+            elif lang == "javascript":
+                print(f"• Install acorn packages: npm install -g acorn acorn-walk")
+            elif lang == "go":
+                print(f"• Install Go from: https://golang.org/dl/")
+    else:
+        print("✅ All dependencies are installed!")
+
+
+def install_python_deps():
+    """Устанавливает Python зависимости"""
+    print("📦 Installing Python dependencies...")
+    try:
+        subprocess.run([sys.executable, "-m", "pip", "install", "radon"], check=True)
+        print("✅ radon installed successfully")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Failed to install radon: {e}")
+        return False
+
+
+def install_js_deps():
+    """Устанавливает JavaScript зависимости"""
+    print("📦 Installing JavaScript dependencies...")
+    try:
+        subprocess.run(["npm", "install", "-g", "acorn", "acorn-walk"], check=True)
+        print("✅ acorn + acorn-walk installed successfully")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Failed to install JS deps: {e}")
+        return False
+
+
+# -----------------------
 # CLI
 # -----------------------
 
 def main():
     parser = argparse.ArgumentParser(prog="codeaudit")
-    parser.add_argument("command", choices=["scan"])
+    parser.add_argument("command", choices=["scan", "check-deps"])
     parser.add_argument("path")
     parser.add_argument("--format", choices=["text", "json"], default="text")
     parser.add_argument("--threshold", type=int, default=None)
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("--install", action="store_true",
+                        help="Automatically install missing dependencies")
 
     args = parser.parse_args()
 
     try:
-        language = detect_language(args.path)
-        if not language:
-            raise RuntimeError("Unsupported language")
+        if args.command == "scan":
+            language = detect_language(args.path)
+            if not language:
+                raise RuntimeError("Unsupported language")
 
-        if language == "python":
-            complexities = analyze_python(args.path)
-        elif language == "go":
-            complexities = analyze_go(args.path)
-        elif language == "js":
-            complexities = analyze_js(args.path)
-        else:
-            complexities = []
+            if language == "python":
+                complexities = analyze_python(args.path)
+            elif language == "go":
+                complexities = analyze_go(args.path)
+            elif language == "js":
+                complexities = analyze_js(args.path)
+            else:
+                complexities = []
 
-        metrics = compute_metrics(complexities)
-        rp = metrics["refactoring_pressure"]
+            metrics = compute_metrics(complexities)
+            rp = metrics["refactoring_pressure"]
 
-        output = {
-            "language": language,
-            "summary": metrics,
-            "risk_level": risk_level(rp),
-            "threshold_exceeded": (
-                args.threshold is not None and rp > args.threshold
-            )
-        }
+            output = {
+                "language": language,
+                "summary": metrics,
+                "risk_level": risk_level(rp),
+                "threshold_exceeded": (
+                    args.threshold is not None and rp > args.threshold
+                )
+            }
 
-        if args.verbose:
-            output["top_complexities"] = sorted(
-                complexities,
-                key=lambda x: x["complexity"],
-                reverse=True
-            )[:20]
+            if args.verbose:
+                output["top_complexities"] = sorted(
+                    complexities,
+                    key=lambda x: x["complexity"],
+                    reverse=True
+                )[:20]
 
-        if args.format == "json":
-            print(json.dumps(output, indent=2))
-        else:
-            print("\n=== CODEAUDIT REPORT ===\n")
-            print(json.dumps(output, indent=2))
+            if args.format == "json":
+                print(json.dumps(output, indent=2))
+            else:
+                print("\n=== CODEAUDIT REPORT ===\n")
+                print(json.dumps(output, indent=2))
 
-        if args.threshold is not None and rp > args.threshold:
-            sys.exit(2)
+            if args.threshold is not None and rp > args.threshold:
+                sys.exit(2)
+
+        elif args.command == "check-deps":
+            languages_found = detect_languages(args.path)
+
+            if not languages_found:
+                output = {
+                    "error": "No supported languages found in the project",
+                    "languages_found": [],
+                    "dependencies": {},
+                    "missing_dependencies": []
+                }
+                if args.format == "json":
+                    print(json.dumps(output, indent=2))
+                else:
+                    print("⚠️ No supported languages found in the project")
+                sys.exit(1)
+
+            deps_status, missing_deps = check_dependencies(languages_found)
+
+            if args.format == "json":
+                output = {
+                    "languages_found": languages_found,
+                    "dependencies": {
+                        lang: {
+                            "name": info["name"],
+                            "installed": info["installed"]
+                        } for lang, info in deps_status.items()
+                    },
+                    "missing_dependencies": missing_deps,
+                    "all_dependencies_installed": len(missing_deps) == 0
+                }
+                print(json.dumps(output, indent=2))
+            else:
+                print_dependency_status(deps_status, missing_deps, languages_found)
+
+            if args.install and missing_deps:
+                print("\n🔧 AUTO-INSTALLING MISSING DEPENDENCIES:")
+                print("-" * 45)
+                success = True
+
+                for lang in missing_deps:
+                    if lang == "python":
+                        if not install_python_deps():
+                            success = False
+                    elif lang == "javascript":
+                        if not install_js_deps():
+                            success = False
+
+                if success:
+                    print("\n✅ All dependencies installed successfully!")
+                else:
+                    print("\n❌ Some dependencies failed to install")
+                    sys.exit(1)
+            elif missing_deps:
+                sys.exit(1)
     except Exception as e:
         print(json.dumps({"error": str(e)}))
         sys.exit(1)
