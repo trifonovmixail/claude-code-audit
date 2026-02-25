@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Скрипт автоматической установки скилла code-audit для Claude Code
-# Использование: eval "$(curl -s https://raw.githubusercontent.com/trifonovmixail/claude-code-audit/main/install.sh)"
+# CodeAudit skill installer for Claude Code
+# Usage: eval "$(curl -s https://raw.githubusercontent.com/trifonovmixail/claude-code-audit/main/install.sh)"
 
 set -euo pipefail
 
@@ -30,91 +30,84 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
-# Функция очистки при прерывании
+# Cleanup function on interruption
 cleanup() {
     if [[ -d "$TMP_DIR" ]]; then
-        log_info "Очистка временных файлов..."
+        log_info "Cleaning up temporary files..."
         rm -rf "$TMP_DIR"
     fi
 }
 
-# Установка обработчика сигнала
+# Set up signal handler
 trap cleanup EXIT INT TERM
 
-# Основная функция установки
+# Main installation function
 install_skill() {
-    log_info "Начало установки скилла code-audit..."
+    log_info "Starting CodeAudit skill installation..."
 
-    # Проверка наличия git
+    # Check git availability
     if ! command -v git &> /dev/null; then
-        log_error "git не найден. Пожалуйста установите git."
+        log_error "git not found. Please install git first."
         exit 1
     fi
 
-    # Проверка и создание целевой директории
+    # Create target directory if it doesn't exist
     if [[ ! -d "$HOME/.claude/skills" ]]; then
-        log_info "Создание директории ~/.claude/skills..."
+        log_info "Creating ~/.claude/skills directory..."
         mkdir -p "$HOME/.claude/skills"
     fi
 
-    # Очистка временной директории
+    # Clean temporary directory
     if [[ -d "$TMP_DIR" ]]; then
-        log_info "Удаление существующей временной директории..."
+        log_info "Removing existing temporary directory..."
         rm -rf "$TMP_DIR"
     fi
 
-    # Клонирование репозитория
-    log_info "Клонирование репозитория: $REPO_URL"
+    # Clone repository
+    log_info "Cloning repository: $REPO_URL"
     git clone "$REPO_URL" "$TMP_DIR"
 
-    # Удаление существующего скилла
+    # Remove existing skill installation
     if [[ -d "$TARGET_DIR" ]]; then
-        log_info "Удаление существующей установки скилла..."
+        log_info "Removing existing skill installation..."
         rm -rf "$TARGET_DIR"
     fi
 
-    # Копирование скилла
-    log_info "Копирование скилла в $TARGET_DIR..."
+    # Copy skill
+    log_info "Copying skill to $TARGET_DIR..."
     cp -r "$TMP_DIR/$SKILL_DIR" "$TARGET_DIR"
 
-    # Установка прав на исполнение
-    log_info "Установка прав на исполнение..."
+    # Set executable permissions
+    log_info "Setting executable permissions..."
     chmod +x "$TARGET_DIR/codeaudit.py"
 
-    # Проверка успешности установки
+    # Verify successful installation
     if [[ -f "$TARGET_DIR/codeaudit.py" && -x "$TARGET_DIR/codeaudit.py" ]]; then
-        log_info "Скилл успешно установлен!"
-        log_info "Путь к скиллу: $TARGET_DIR"
-        log_info "Использование: codeaudit.py <команда> [аргументы]"
-
-        # Предложение добавить в PATH (опционально)
-        if [[ ":$PATH:" != *":$TARGET_DIR:"* ]]; then
-            log_warn "Для удобства использования добавьте $TARGET_DIR в PATH:"
-            log_warn "export PATH=\"\$PATH:$TARGET_DIR\""
-            log_warn "Или добавьте эту строку в ~/.bashrc или ~/.zshrc"
-        fi
+        log_info "Skill installed successfully!"
+        log_info "Skill location: $TARGET_DIR"
+        log_info "Usage: codeaudit.py <command> [arguments]"
     else
-        log_error "Ошибка установки: скрипт не найден или не имеет прав на исполнение"
+        log_error "Installation failed: script not found or not executable"
         exit 1
     fi
 }
 
-# Проверка аргументов
+# Argument checking
 case "${1:-}" in
     "--help"|"-h")
-        echo "Скрипт автоматической установки скилла code-audit"
+        echo "CodeAudit skill installer for Claude Code"
         echo ""
-        echo "Использование:"
-        echo "  $0         - Установить скилл"
-        echo "  $0 --help  - Показать это сообщение"
+        echo "Usage:"
+        echo "  $0         - Install the skill"
+        echo "  $0 --help  - Show this message"
         exit 0
         ;;
     "")
         install_skill
         ;;
     *)
-        log_error "Неизвестный аргумент: $1"
-        log_error "Используйте $0 --help для справки"
+        log_error "Unknown argument: $1"
+        log_error "Use $0 --help for help"
         exit 1
         ;;
 esac
