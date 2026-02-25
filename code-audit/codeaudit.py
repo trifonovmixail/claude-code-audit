@@ -985,33 +985,28 @@ def compute_metrics_with_modules(modules_data, functions_data):
         module_rp = 0
         top_modules = []
     else:
-        # Calculate module RP with error handling
-        try:
-            # Convert total_complexity to int to handle potential string values
-            total_complexity = 0
-            for m in modules_data:
-                try:
-                    total_complexity += int(m.get("total_complexity", 0))
-                except (TypeError, ValueError):
-                    # Skip invalid values
-                    pass
+        # Calculate MRP for each module individually
+        for module in modules_data:
+            try:
+                module["module_rp"] = calculate_mrp({
+                    "total_complexity": int(module.get("total_complexity", 0)),
+                    "max_complexity": int(module.get("max_complexity", 0)),
+                    "loc": int(module.get("loc", 0))
+                })
+            except Exception as e:
+                # If calculate_mrp fails for a module, use default value of 0
+                module["module_rp"] = 0
+                # Log error would go here in production
+                # import warnings
+                # warnings.warn(f"Failed to calculate module RP for {module.get('file', 'unknown')}: {str(e)}")
 
-            module_rp = calculate_mrp({
-                "total_complexity": total_complexity,
-                "max_complexity": max(int(m.get("max_complexity", 0)) for m in modules_data),
-                "loc": sum(int(m.get("loc", 0)) for m in modules_data)
-            })
-        except Exception as e:
-            # If calculate_mrp fails, use default value of 0
-            module_rp = 0
-            # Log error would go here in production
-            # import warnings
-            # warnings.warn(f"Failed to calculate module RP: {str(e)}")
+        # Calculate overall module RP as average of all module MRP values
+        module_rp = sum(m.get("module_rp", 0) for m in modules_data) / len(modules_data) if modules_data else 0
 
-        # Get top 10 most complex modules
+        # Get top 10 modules by their individual MRP values
         top_modules = sorted(
             modules_data,
-            key=lambda x: x.get("max_complexity", 0),
+            key=lambda x: x.get("module_rp", 0),
             reverse=True
         )[:10]
 
