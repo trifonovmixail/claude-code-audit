@@ -154,9 +154,22 @@ def analyze_python_with_modules(path):
     }
 
 
-def analyze_go(path):
+def analyze_go(path: str, timeout: int = 60) -> list:
     """
     Go complexity analyzer с top_complexities.
+
+    Args:
+        path (str): Path to the Go project directory to analyze
+        timeout (int): Timeout in seconds for Go analysis (default: 60)
+
+    Returns:
+        list: List of dictionaries containing function complexity data
+
+    Raises:
+        TypeError: If path is not a string
+        ValueError: If path is empty or doesn't exist
+        TimeoutError: If Go analysis exceeds timeout
+        RuntimeError: If Go analysis fails
     """
     import tempfile
     import textwrap
@@ -164,16 +177,37 @@ def analyze_go(path):
     import subprocess
     import os
 
+    # Input validation
+    if not isinstance(path, str):
+        raise TypeError(f"path must be a string, got {type(path).__name__}")
+
+    if not path.strip():
+        raise ValueError("path cannot be empty or whitespace")
+
+    if not os.path.exists(path):
+        raise ValueError(f"Path does not exist: {path}")
+
+    if not os.path.isdir(path):
+        raise ValueError(f"Path is not a directory: {path}")
+
+    # Check if Go is available
+    try:
+        subprocess.run(["go", "version"], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise RuntimeError("Go is not installed or not available in PATH")
+
     go_code = textwrap.dedent("""
         package main
 
         import (
             "encoding/json"
+            "fmt"
             "go/ast"
             "go/parser"
             "go/token"
             "os"
             "path/filepath"
+            "time"
         )
 
         type FuncComplexity struct {
@@ -196,6 +230,12 @@ def analyze_go(path):
         }
 
         func main() {
+            if len(os.Args) < 2 {
+                fmt.Println("Usage: analyzer <path>")
+                os.Exit(1)
+            }
+
+            start := time.Now()
             root := os.Args[1]
             var results []FuncComplexity
             fset := token.NewFileSet()
@@ -206,8 +246,16 @@ def analyze_go(path):
                     return nil
                 }
 
+                // Check if we've exceeded timeout (approximately)
+                if time.Since(start).Seconds() > 50 { // Leave some buffer
+                    return fmt.Errorf("analysis timeout")
+                }
+
                 node, err := parser.ParseFile(fset, path, nil, 0)
-                if err != nil { return nil }
+                if err != nil {
+                    // Parse errors shouldn't stop the analysis
+                    return nil
+                }
 
                 for _, decl := range node.Decls {
                     if fn, ok := decl.(*ast.FuncDecl); ok {
@@ -225,47 +273,127 @@ def analyze_go(path):
         }
     """)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        go_file = os.path.join(tmpdir, "analyzer.go")
-        with open(go_file, "w") as f:
-            f.write(go_code)
+    # Run with timeout
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            go_file = os.path.join(tmpdir, "analyzer.go")
+            with open(go_file, "w") as f:
+                f.write(go_code)
 
-        result = subprocess.run(
-            ["go", "run", go_file, path],
-            capture_output=True,
-            text=True
-        )
+            process = subprocess.Popen(
+                ["go", "run", go_file, path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
 
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr)
+            try:
+                stdout, stderr = process.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                raise TimeoutError(f"Go analysis timed out after {timeout} seconds")
 
-        return json.loads(result.stdout)
+            if process.returncode != 0:
+                raise RuntimeError(f"Go analysis failed: {stderr}")
+
+            return json.loads(stdout)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Invalid JSON response from Go analyzer: {e}")
 
 
-def analyze_go_with_modules(path):
+def analyze_go_with_modules(path: str, timeout: int = 60) -> dict:
     """
     Analyze Go code with module-level metrics.
+
+    Args:
+        path (str): Path to the Go project directory to analyze
+        timeout (int): Timeout in seconds for Go analysis (default: 60)
 
     Returns:
         dict: A dictionary containing modules and functions data
 
     Raises:
-        RuntimeError: If Go analysis fails
-        ValueError: If no valid functions are found
+        TypeError: If path is not a string
+        ValueError: If path is empty, doesn't exist, or is not a directory
+        TimeoutError: If Go analysis exceeds timeout
+        RuntimeError: If Go analysis fails for other reasons
     """
+    # Input validation
+    if not isinstance(path, str):
+        raise TypeError(f"path must be a string, got {type(path).__name__}")
+
+    if not path.strip():
+        raise ValueError("path cannot be empty or whitespace")
+
+    if not os.path.exists(path):
+        raise ValueError(f"Path does not exist: {path}")
+
+    if not os.path.isdir(path):
+        raise ValueError(f"Path is not a directory: {path}")
+
     try:
-        # Get function-level analysis using existing function
-        functions_data = analyze_go(path)
-    except RuntimeError as e:
-        raise RuntimeError(f"Go analysis failed: {str(e)}")
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"Invalid JSON response from Go analyzer: {str(e)}")
+        # Get function-level analysis using existing function with timeout
+        import signal
+        import tempfile
+        import subprocess
+        from pathlib import Path
+
+        # Create a timeout wrapper for subprocess
+        def run_with_timeout(cmd, timeout_seconds, cwd=None):
+            """Run subprocess with timeout"""
+            try:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    cwd=cwd
+                )
+                stdout, stderr = process.communicate(timeout=timeout_seconds)
+                return process.returncode, stdout, stderr
+            except subprocess.TimeoutExpired:
+                process.kill()
+                raise TimeoutError(f"Go analysis timed out after {timeout_seconds} seconds")
+
+        # First check if there are any Go files in the directory
+        go_files = list(Path(path).rglob("*.go"))
+        if not go_files:
+            return {
+                "modules": [],
+                "functions": [],
+                "warning": "No Go files found in the specified path"
+            }
+
+        try:
+            # Get function-level analysis using existing function
+            functions_data = analyze_go(path)
+        except TimeoutError:
+            raise TimeoutError(f"Go analysis timed out after {timeout} seconds")
+        except RuntimeError as e:
+            raise RuntimeError(f"Go analysis failed: {str(e)}")
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Invalid JSON response from Go analyzer: {str(e)}")
+        except Exception as e:
+            raise RuntimeError(f"Unexpected error during Go analysis: {str(e)}")
+
+    except TimeoutError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"Error running Go analysis: {str(e)}")
 
     if not functions_data:
         return {
             "modules": [],
-            "functions": []
+            "functions": [],
+            "warning": "No valid functions found in Go files"
         }
+
+    # Validate functions data structure
+    for func_data in functions_data:
+        if not isinstance(func_data, dict):
+            raise ValueError(f"Invalid function data structure: {type(func_data)}")
+        if "file" not in func_data or "complexity" not in func_data:
+            raise ValueError("Function data missing required fields (file, complexity)")
 
     # Use dictionary for O(1) module lookups instead of list with O(n) lookups
     modules_dict = {}
@@ -274,11 +402,23 @@ def analyze_go_with_modules(path):
         file_path = func_data["file"]
 
         if file_path not in modules_dict:
-            # Create new module entry with error handling for count_lines
+            # Create new module entry with comprehensive error handling for count_lines
             try:
                 loc = count_lines(file_path)
-            except (FileNotFoundError, PermissionError, OSError) as e:
-                # Log error and use None for LOC when file is inaccessible
+            except FileNotFoundError:
+                # File was processed during Go analysis but no longer exists
+                loc = None
+            except PermissionError:
+                # No permission to read the file
+                loc = None
+            except IsADirectoryError:
+                # Path is a directory, not a file
+                loc = None
+            except UnicodeDecodeError:
+                # File encoding issues
+                loc = None
+            except OSError as e:
+                # Other file system errors
                 loc = None
 
             modules_dict[file_path] = {
@@ -302,6 +442,9 @@ def analyze_go_with_modules(path):
             module["avg_complexity"] = module["total_complexity"] / module["function_count"]
         else:
             module["avg_complexity"] = 0
+
+        # Add file existence status
+        module["file_exists"] = os.path.exists(file_path)
 
         modules_data.append(module)
 
@@ -423,6 +566,100 @@ console.log(JSON.stringify(output));
         except subprocess.CalledProcessError as e:
             print(f"⚠️ JS-анализ не удался: {e.stderr}")
             return []
+
+
+def analyze_js_with_modules(path: str) -> dict:
+    """
+    Analyze JavaScript code with module-level metrics.
+
+    Args:
+        path (str): Path to the JavaScript project directory to analyze
+
+    Returns:
+        dict: A dictionary containing modules and functions data
+
+    Raises:
+        TypeError: If path is not a string
+        ValueError: If path is empty, doesn't exist, or is not a directory
+    """
+    import tempfile
+    import json
+    import subprocess
+    import os
+
+    # Input validation
+    if not isinstance(path, str):
+        raise TypeError(f"path must be a string, got {type(path).__name__}")
+
+    if not path.strip():
+        raise ValueError("path cannot be empty or whitespace")
+
+    if not os.path.exists(path):
+        raise ValueError(f"Path does not exist: {path}")
+
+    if not os.path.isdir(path):
+        raise ValueError(f"Path is not a directory: {path}")
+
+    # Get functions data using existing analyze_js function
+    functions_data = analyze_js(path)
+
+    # Process functions data to create module metrics
+    modules_dict = {}
+
+    for func_data in functions_data:
+        file_path = func_data["file"]
+
+        if file_path not in modules_dict:
+            # Create new module entry with comprehensive error handling for count_lines
+            try:
+                loc = count_lines(file_path)
+            except FileNotFoundError:
+                # File was processed during JS analysis but no longer exists
+                loc = None
+            except PermissionError:
+                # No permission to read the file
+                loc = None
+            except IsADirectoryError:
+                # Path is a directory, not a file
+                loc = None
+            except UnicodeDecodeError:
+                # File encoding issues
+                loc = None
+            except OSError as e:
+                # Other file system errors
+                loc = None
+
+            modules_dict[file_path] = {
+                "file": file_path,
+                "loc": loc,
+                "total_complexity": 0,
+                "function_count": 0,
+                "max_complexity": 0
+            }
+
+        # Update module data
+        module = modules_dict[file_path]
+        module["function_count"] += 1
+        module["total_complexity"] += func_data["complexity"]
+        module["max_complexity"] = max(module["max_complexity"], func_data["complexity"])
+
+    # Calculate average complexity for each module with zero division protection
+    modules_data = []
+    for file_path, module in modules_dict.items():
+        if module["function_count"] > 0:
+            module["avg_complexity"] = module["total_complexity"] / module["function_count"]
+        else:
+            module["avg_complexity"] = 0
+
+        # Add file existence status
+        module["file_exists"] = os.path.exists(file_path)
+
+        modules_data.append(module)
+
+    return {
+        "modules": modules_data,
+        "functions": functions_data
+    }
 
 
 def calculate_mrp(module_data: dict) -> int:
