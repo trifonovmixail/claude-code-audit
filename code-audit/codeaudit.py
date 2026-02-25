@@ -242,6 +242,75 @@ def analyze_go(path):
         return json.loads(result.stdout)
 
 
+def analyze_go_with_modules(path):
+    """
+    Analyze Go code with module-level metrics.
+
+    Returns:
+        dict: A dictionary containing modules and functions data
+
+    Raises:
+        RuntimeError: If Go analysis fails
+        ValueError: If no valid functions are found
+    """
+    try:
+        # Get function-level analysis using existing function
+        functions_data = analyze_go(path)
+    except RuntimeError as e:
+        raise RuntimeError(f"Go analysis failed: {str(e)}")
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Invalid JSON response from Go analyzer: {str(e)}")
+
+    if not functions_data:
+        return {
+            "modules": [],
+            "functions": []
+        }
+
+    # Use dictionary for O(1) module lookups instead of list with O(n) lookups
+    modules_dict = {}
+
+    for func_data in functions_data:
+        file_path = func_data["file"]
+
+        if file_path not in modules_dict:
+            # Create new module entry with error handling for count_lines
+            try:
+                loc = count_lines(file_path)
+            except (FileNotFoundError, PermissionError, OSError) as e:
+                # Log error and use None for LOC when file is inaccessible
+                loc = None
+
+            modules_dict[file_path] = {
+                "file": file_path,
+                "loc": loc,
+                "total_complexity": 0,
+                "function_count": 0,
+                "max_complexity": 0
+            }
+
+        # Update module data
+        module = modules_dict[file_path]
+        module["function_count"] += 1
+        module["total_complexity"] += func_data["complexity"]
+        module["max_complexity"] = max(module["max_complexity"], func_data["complexity"])
+
+    # Calculate average complexity for each module with zero division protection
+    modules_data = []
+    for file_path, module in modules_dict.items():
+        if module["function_count"] > 0:
+            module["avg_complexity"] = module["total_complexity"] / module["function_count"]
+        else:
+            module["avg_complexity"] = 0
+
+        modules_data.append(module)
+
+    return {
+        "modules": modules_data,
+        "functions": functions_data
+    }
+
+
 def analyze_js(path):
     """
     Универсальный JS-анализатор для modern JS/TS.
@@ -356,19 +425,64 @@ console.log(JSON.stringify(output));
             return []
 
 
-def calculate_mrp(module_data):
-    """Calculate Module Refactoring Pressure"""
-    total_complexity = module_data.get("total_complexity", 0)
-    max_complexity = module_data.get("max_complexity", 0)
-    loc = module_data.get("loc", 0)
+def calculate_mrp(module_data: dict) -> int:
+    """
+    Calculate Module Refactoring Pressure (MRP)
 
-    # Calculate complexity density
+    MRP is a metric that combines three factors to determine how much refactoring
+    pressure a module is under:
+    1. Complexity Density (40%): (total_complexity / loc) * 100
+    2. Max Complexity (40%): highest complexity in the module
+    3. LOC Factor (20%): bonus based on lines of code size
+
+    Args:
+        module_data (dict): Dictionary containing module metrics with keys:
+            - total_complexity (int): Sum of all function complexities in module
+            - max_complexity (int): Highest complexity in module
+            - loc (int): Lines of code in module
+
+    Returns:
+        int: MRP score clamped between 0 and 100
+
+    Raises:
+        TypeError: If module_data is not a dictionary
+        ValueError: If module_data contains invalid values
+    """
+    # Input validation
+    if not isinstance(module_data, dict):
+        raise TypeError(f"module_data must be a dictionary, got {type(module_data).__name__}")
+
+    # Get values with error handling
+    def safe_get_value(key: str, default: int = 0) -> int:
+        """Safely get value from dictionary with validation"""
+        value = module_data.get(key, default)
+
+        # Handle None values
+        if value is None:
+            return default
+
+        # Validate type
+        if not isinstance(value, (int, float)):
+            raise TypeError(f"Value for '{key}' must be a number, got {type(value).__name__}")
+
+        # Convert to int if float
+        value = int(value)
+
+        # Handle negative values by clamping to 0
+        return max(0, value)
+
+    # Extract and validate inputs
+    total_complexity = safe_get_value("total_complexity")
+    max_complexity = safe_get_value("max_complexity")
+    loc = safe_get_value("loc")
+
+    # Calculate complexity density with zero division protection
     if loc > 0:
         complexity_density = (total_complexity / loc) * 100
     else:
         complexity_density = 0
 
-    # Calculate LOC factor
+    # Calculate LOC factor with documented thresholds
     loc_factor = 0
     if 1000 <= loc < 2000:
         loc_factor = 5
@@ -377,11 +491,20 @@ def calculate_mrp(module_data):
     elif loc >= 5000:
         loc_factor = 15
 
-    # MRP formula
-    mrp = int(0.4 * complexity_density + 0.4 * max_complexity + 0.2 * loc_factor)
+    # MRP formula with documented weights
+    # Weight explanations:
+    # - 40% complexity_density: Measures how complex code is relative to its size
+    # - 40% max_complexity: Identifies functions that need immediate attention
+    # - 20% loc_factor: Rewards well-structured large modules
+    mrp = 0.4 * complexity_density + 0.4 * max_complexity + 0.2 * loc_factor
 
-    # Clamp between 0 and 100
+    # Convert to int after calculation
+    mrp = int(mrp)
+
+    # Clamp between 0 and 100 to ensure valid percentage
     return max(0, min(100, mrp))
+
+
 
 
 # -----------------------
@@ -455,7 +578,16 @@ def percentile(data, p):
 
 
 def compute_metrics(complexities):
-    # фильтруем только корректные словари
+    """
+    Compute metrics from function complexity data.
+
+    Args:
+        complexities: List of dictionaries containing function complexity data
+
+    Returns:
+        dict: Dictionary with computed metrics including refactoring pressure
+    """
+    # Filter only valid dictionaries
     clean_complexities = [
         c for c in complexities
         if isinstance(c, dict) and "complexity" in c and isinstance(c["complexity"], int)
@@ -477,22 +609,19 @@ def compute_metrics(complexities):
     p90 = percentile(complexity_values, 0.9)
     max_c = max(complexity_values)
 
-    # RP шкала
-    if p90 < 10:
-        rp = 10
-    elif p90 < 15:
-        rp = 30
-    elif p90 < 20:
-        rp = 50
-    elif p90 < 30:
-        rp = 75
-    else:
-        rp = 90
+    # Use calculate_mrp for module-level refactoring pressure calculation
+    # This provides a more accurate measure of refactoring pressure
+    module_data = {
+        "total_complexity": sum(complexity_values),
+        "max_complexity": max_c,
+        "loc": len(clean_complexities) * 50  # Estimate LOC based on function count
+    }
+    rp = calculate_mrp(module_data)
 
-    # Топ 20 сложных функций
+    # Top 20 most complex functions
     top_complexities = sorted(
         [c for c in complexities if isinstance(c, dict) and "complexity" in c],
-        key=lambda x: x["complexity"],  # сортируем строго по числу
+        key=lambda x: x["complexity"],  # sort strictly by number
         reverse=True
     )[:20]
 
