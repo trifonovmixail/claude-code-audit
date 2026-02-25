@@ -1345,46 +1345,70 @@ def main():
 
     try:
         if args.command == "scan":
-            language = detect_language(args.path)
-            if not language:
-                raise RuntimeError("Unsupported language")
+            # Use module-level analysis if available, fallback to legacy analysis
+            try:
+                language = detect_language(args.path)
+                if not language:
+                    raise RuntimeError("Unsupported language")
 
-            if language == "python":
-                complexities = analyze_python(args.path)
-            elif language == "go":
-                complexities = analyze_go(args.path)
-            elif language == "js":
-                complexities = analyze_js(args.path)
-            else:
-                complexities = []
-
-            metrics = compute_metrics(complexities)
-            rp = metrics["refactoring_pressure"]
-
-            output = {
-                "language": language,
-                "summary": metrics,
-                "risk_level": risk_level(rp),
-                "threshold_exceeded": (
-                    args.threshold is not None and rp > args.threshold
+                output = scan_with_module_analysis(
+                    args.path,
+                    language
                 )
-            }
 
-            if args.verbose:
-                output["top_complexities"] = sorted(
-                    complexities,
-                    key=lambda x: x["complexity"],
-                    reverse=True
-                )[:20]
+                if args.format == "json":
+                    print(json.dumps(output, indent=2))
+                else:
+                    print("\n=== CODEAUDIT REPORT ===\n")
+                    print(json.dumps(output, indent=2))
 
-            if args.format == "json":
-                print(json.dumps(output, indent=2))
-            else:
-                print("\n=== CODEAUDIT REPORT ===\n")
-                print(json.dumps(output, indent=2))
+                if output["status"] == "critical":
+                    sys.exit(2)
+                elif output["status"] == "warning":
+                    sys.exit(1)
 
-            if args.threshold is not None and rp > args.threshold:
-                sys.exit(2)
+            except (RuntimeError, ValueError) as e:
+                # Fallback to legacy analysis if module analysis fails
+                language = detect_language(args.path)
+                if not language:
+                    raise RuntimeError("Unsupported language")
+
+                if language == "python":
+                    complexities = analyze_python(args.path)
+                elif language == "go":
+                    complexities = analyze_go(args.path)
+                elif language == "js":
+                    complexities = analyze_js(args.path)
+                else:
+                    complexities = []
+
+                metrics = compute_metrics(complexities)
+                rp = metrics["refactoring_pressure"]
+
+                output = {
+                    "language": language,
+                    "summary": metrics,
+                    "risk_level": risk_level(rp),
+                    "threshold_exceeded": (
+                        args.threshold is not None and rp > args.threshold
+                    )
+                }
+
+                if args.verbose:
+                    output["top_complexities"] = sorted(
+                        complexities,
+                        key=lambda x: x["complexity"],
+                        reverse=True
+                    )[:20]
+
+                if args.format == "json":
+                    print(json.dumps(output, indent=2))
+                else:
+                    print("\n=== CODEAUDIT REPORT ===\n")
+                    print(json.dumps(output, indent=2))
+
+                if args.threshold is not None and rp > args.threshold:
+                    sys.exit(2)
 
         elif args.command == "check-deps":
             languages_found = detect_languages(args.path)

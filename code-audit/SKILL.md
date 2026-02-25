@@ -1,6 +1,6 @@
 ---
 name: code-audit
-description: "Code refactoring advisor"
+description: "Code refactoring advisor with module-level analysis"
 ---
 
 # Code Refactoring Advisor
@@ -102,32 +102,60 @@ codeaudit.py scan <path_to_repo> --format json --threshold <threshold_value> -v
 
 ## 2. Interpreting JSON
 
-Example JSON returned by `codeaudit`:
+Example JSON returned by `codeaudit` with module-level analysis:
 
 ```json
 {
   "language": "python",
-  "summary": {
-    "functions": 128,
-    "p50_complexity": 4,
-    "p90_complexity": 14,
-    "max_complexity": 32,
-    "refactoring_pressure": 62
-  },
-  "risk_level": "high",
-  "threshold_exceeded": true,
-  "top_complexities": [
+  "status": "ok",
+  "risk_level": "low",
+  "rp": 42,
+  "function_rp": 35,
+  "module_rp": 50,
+  "top_function_complexities": [
     {"function": "process_data", "file": "app/data.py", "complexity": 32},
     {"function": "calculate_metrics", "file": "app/metrics.py", "complexity": 28}
-  ]
+  ],
+  "top_file_complexities": [
+    {
+      "file": "app/data.py",
+      "loc": 250,
+      "total_complexity": 85,
+      "avg_complexity": 8.5,
+      "function_count": 10,
+      "max_complexity": 32,
+      "module_rp": 65
+    },
+    {
+      "file": "app/metrics.py",
+      "loc": 180,
+      "total_complexity": 70,
+      "avg_complexity": 7.0,
+      "function_count": 9,
+      "max_complexity": 28,
+      "module_rp": 58
+    }
+  ],
+  "instructions": [
+    "Split function 'process_data' in file 'app/data.py' into subfunctions",
+    "Review module 'app/data.py' - high refactoring pressure (65)",
+    "Consider refactoring high-complexity areas"
+  ],
+  "summary": "Low to moderate complexity - maintain current standards"
 }
 ```
 
 Fields:
 
-* `refactoring_pressure` (RP): numeric complexity score (0–100)
-* `threshold_exceeded`: `true` if RP exceeds the threshold
-* `top_complexities`: top functions by complexity
+- `rp`: Overall Refactoring Pressure (weighted average)
+- `function_rp`: Function-level refactoring pressure (0–100)
+- `module_rp`: Module-level refactoring pressure (0–100)
+- `top_function_complexities`: Top 20 most complex functions
+- `top_file_complexities`: Top modules by MRP with LOC and complexity metrics
+- `status`: "ok" | "warning" | "critical"
+- `risk_level`: "low" | "medium" | "high" | "critical"
+- `instructions`: Actionable refactoring recommendations
+- `summary`: Concise overview of code quality
 
 ---
 

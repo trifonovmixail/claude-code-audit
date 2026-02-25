@@ -3,6 +3,8 @@
 `codeaudit` is a CLI tool and Claude Code skill for analyzing the complexity of your codebase and estimating **refactoring pressure**.
 It supports **Python, Golang, and JavaScript** projects, and provides a quantitative measure of how "complicated" your code is, highlighting functions, modules, and files that may require refactoring.
 
+Now with **module-level analysis** that considers file size (Lines of Code) in refactoring pressure calculations!
+
 ## 🚀 Installation
 
 ### Automatic Installation (Recommended)
@@ -50,7 +52,14 @@ Once installed, the skill can be invoked by Claude to run automated complexity s
    * For **Golang**, it analyzes the AST to compute cyclomatic complexity per function.
    * For **JavaScript/TypeScript**, it uses a **temporary Node.js script with `acorn` and `acorn-walk`** to parse modern JS/TS syntax and compute cyclomatic complexity per function.
 
-3. **Aggregating Metrics**
+3. **Module-Level Analysis**
+   CodeAudit now includes comprehensive module-level analysis with MRP (Module Refactoring Pressure):
+
+   * **Function Analysis**: Cyclomatic complexity per function
+   * **Module Analysis**: File size (LOC), total complexity, average complexity
+   * **MRP Calculation**: `0.4*complexity_density + 0.4*max_complexity + 0.2*loc_factor`
+   * **Weighted RP**: 70% function RP + 30% module RP for final score
+
    The following metrics are collected for each language:
 
 | Metric                    | Description                                        |
@@ -60,6 +69,8 @@ Once installed, the skill can be invoked by Claude to run automated complexity s
 | `p90_complexity`          | 90th percentile cyclomatic complexity (upper tail) |
 | `max_complexity`          | Maximum cyclomatic complexity in the codebase      |
 | `top_complexities`        | Top 20 most complex functions                      |
+| `module_rp`                | Module-level refactoring pressure (0-100)          |
+| `top_file_complexities`   | Top modules by MRP with LOC and complexity metrics |
 | `LCOM` (Python only)      | Lack of Cohesion in Methods, per class/module      |
 | `cycles` (Go only)        | Number of cycles in call graph                     |
 | `graph_density` (Go only) | Density of function dependency graph               |
@@ -96,19 +107,41 @@ After running the scan, the JSON or CLI report contains:
 ```json
 {
   "language": "python",
-  "summary": {
-    "functions": 320,
-    "p50_complexity": 1,
-    "p90_complexity": 6,
-    "max_complexity": 19,
-    "refactoring_pressure": 10
-  },
+  "status": "ok",
   "risk_level": "low",
-  "threshold_exceeded": false,
-  "top_complexities": [
-    {"function": "foo", "file": "package/module.py", "complexity": 19},
-    {"function": "bar", "file": "package/module.py", "complexity": 14}
-  ]
+  "rp": 42,
+  "function_rp": 35,
+  "module_rp": 50,
+  "top_function_complexities": [
+    {"function": "process_data", "file": "app/data.py", "complexity": 32},
+    {"function": "calculate_metrics", "file": "app/metrics.py", "complexity": 28}
+  ],
+  "top_file_complexities": [
+    {
+      "file": "app/data.py",
+      "loc": 250,
+      "total_complexity": 85,
+      "avg_complexity": 8.5,
+      "function_count": 10,
+      "max_complexity": 32,
+      "module_rp": 65
+    },
+    {
+      "file": "app/metrics.py",
+      "loc": 180,
+      "total_complexity": 70,
+      "avg_complexity": 7.0,
+      "function_count": 9,
+      "max_complexity": 28,
+      "module_rp": 58
+    }
+  ],
+  "instructions": [
+    "Split function 'process_data' in file 'app/data.py' into subfunctions",
+    "Review module 'app/data.py' - high refactoring pressure (65)",
+    "Consider refactoring high-complexity areas"
+  ],
+  "summary": "Low to moderate complexity - maintain current standards"
 }
 ```
 
@@ -125,8 +158,9 @@ After running the scan, the JSON or CLI report contains:
 
 ### Top Complexities
 
-* `top_complexities` shows **the 20 most complex functions** across the codebase, sorted by cyclomatic complexity.
-* This helps focus refactoring efforts on the functions with the highest complexity first.
+* `top_function_complexities` shows **the 20 most complex functions** across the codebase, sorted by cyclomatic complexity.
+* `top_file_complexities` shows **the top modules by MRP** with Lines of Code and detailed complexity metrics.
+* This helps focus refactoring efforts on both problematic functions and modules.
 
 ---
 
@@ -168,6 +202,7 @@ npm install -g acorn acorn-walk
 ## 📌 Notes
 
 * JS analysis now supports **modern ES6+ and TypeScript syntax** without ESLint or `package.json`.
-* Python and Go metrics remain unchanged.
+* Module-level analysis now includes **Lines of Code (LOC)** consideration in MRP calculations.
 * Refactoring Pressure is **a relative measure**, intended to help prioritize refactoring, not an absolute indicator of code quality.
-* The
+* The final RP score is a weighted average: **70% function RP + 30% module RP**.
+* Use `-v` flag to see detailed breakdown of function and module complexities.
