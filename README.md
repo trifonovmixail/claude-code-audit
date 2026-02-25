@@ -1,13 +1,34 @@
 # CodeAudit
 
 `codeaudit` is a CLI tool and Claude Code skill for analyzing the complexity of your codebase and estimating **refactoring pressure**.
-It supports **Python, Golang, and JavaScript** projects, and provides a quantitative measure of how “complicated” your code is, highlighting functions, modules, and files that may require refactoring.
+It supports **Python, Golang, and JavaScript** projects, and provides a quantitative measure of how "complicated" your code is, highlighting functions, modules, and files that may require refactoring.
 
-This skill is packaged under the folder `code-audit`, which should be copied recursively to your Claude skills directory:
+## 🚀 Installation
+
+### Automatic Installation (Recommended)
+
+Install in one line:
+
+```bash
+eval "$(curl -s https://raw.githubusercontent.com/trifonovmixail/claude-code-audit/main/install.sh)"
+```
+
+Or download and run the script:
+
+```bash
+curl -o install.sh https://raw.githubusercontent.com/trifonovmixail/claude-code-audit/main/install.sh
+chmod +x install.sh
+./install.sh
+```
+
+### Manual Installation
+
+Alternatively, you can install manually:
 
 ```bash
 mkdir -p ~/.claude/skills/
 cp -r ./code-audit ~/.claude/skills/code-audit
+chmod +x ~/.claude/skills/code-audit/codeaudit.py
 ```
 
 Once installed, the skill can be invoked by Claude to run automated complexity scans on your projects.
