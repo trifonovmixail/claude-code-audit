@@ -487,8 +487,8 @@ function analyzeFile(filePath) {
     let ast;
     try {
         ast = acorn.parse(code, { ecmaVersion: 2026, sourceType: "module" });
-    } catch(e) {
-        console.error(`⚠️ Ошибка разбора ${filePath}: ${e.message}`);
+    } catch(err) {
+        console.error(`⚠️ Ошибка разбора ${filePath}: ${err.message}`);
         return results;
     }
 
@@ -526,7 +526,7 @@ function walkDir(dir) {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
             all = all.concat(walkDir(fullPath));
-        } else if (entry.isFile() && fullPath.endsWith('.js')) {
+        } else if (entry.isFile() && (fullPath.endsWith('.js') || fullPath.endsWith('.ts'))) {
             all = all.concat(analyzeFile(fullPath));
         }
     }
@@ -568,12 +568,13 @@ console.log(JSON.stringify(output));
             return []
 
 
-def analyze_js_with_modules(path: str) -> dict:
+def analyze_js_with_modules(path: str, timeout: int = 60) -> dict:
     """
     Analyze JavaScript code with module-level metrics.
 
     Args:
         path (str): Path to the JavaScript project directory to analyze
+        timeout (int): Timeout in seconds for JS analysis (default: 60)
 
     Returns:
         dict: A dictionary containing modules and functions data
@@ -581,12 +582,9 @@ def analyze_js_with_modules(path: str) -> dict:
     Raises:
         TypeError: If path is not a string
         ValueError: If path is empty, doesn't exist, or is not a directory
+        TimeoutError: If JS analysis exceeds timeout
+        RuntimeError: If JS analysis fails
     """
-    import tempfile
-    import json
-    import subprocess
-    import os
-
     # Input validation
     if not isinstance(path, str):
         raise TypeError(f"path must be a string, got {type(path).__name__}")
@@ -600,42 +598,55 @@ def analyze_js_with_modules(path: str) -> dict:
     if not os.path.isdir(path):
         raise ValueError(f"Path is not a directory: {path}")
 
-    # Get functions data using existing analyze_js function
-    functions_data = analyze_js(path)
+    # Check if node is available
+    try:
+        subprocess.run(["node", "--version"], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise RuntimeError("Node.js is not installed or not available in PATH")
+
+    # First check if there are any JS/TS files in the directory
+    js_files = list(Path(path).rglob("*.js")) + list(Path(path).rglob("*.ts"))
+    if not js_files:
+        return {
+            "modules": [],
+            "functions": [],
+            "warning": "No JavaScript or TypeScript files found in the specified path"
+        }
+
+    # Get functions data using existing analyze_js function with timeout
+    try:
+        import signal
+
+        # Set up timeout
+        def timeout_handler(signum, frame):
+            raise TimeoutError(f"JS analysis timed out after {timeout} seconds")
+
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(timeout)
+
+        try:
+            functions_data = analyze_js(path)
+        finally:
+            signal.alarm(0)  # Cancel the alarm
+    except TimeoutError:
+        raise TimeoutError(f"JS analysis timed out after {timeout} seconds")
+    except RuntimeError as e:
+        raise RuntimeError(f"JS analysis failed: {str(e)}")
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Invalid JSON response from JS analyzer: {str(e)}")
+    except Exception as e:
+        raise RuntimeError(f"Unexpected error during JS analysis: {str(e)}")
 
     # Process functions data to create module metrics
     modules_dict = {}
+    line_count_cache = {}
 
     for func_data in functions_data:
         file_path = func_data["file"]
 
         if file_path not in modules_dict:
-            # Create new module entry with comprehensive error handling for count_lines
-            try:
-                loc = count_lines(file_path)
-            except FileNotFoundError:
-                # File was processed during JS analysis but no longer exists
-                loc = None
-            except PermissionError:
-                # No permission to read the file
-                loc = None
-            except IsADirectoryError:
-                # Path is a directory, not a file
-                loc = None
-            except UnicodeDecodeError:
-                # File encoding issues
-                loc = None
-            except OSError as e:
-                # Other file system errors
-                loc = None
-
-            modules_dict[file_path] = {
-                "file": file_path,
-                "loc": loc,
-                "total_complexity": 0,
-                "function_count": 0,
-                "max_complexity": 0
-            }
+            # Use utility function with caching
+            modules_dict[file_path] = _create_module_entry(file_path, line_count_cache)
 
         # Update module data
         module = modules_dict[file_path]
@@ -747,6 +758,54 @@ def calculate_mrp(module_data: dict) -> int:
 # -----------------------
 # UTILS
 # -----------------------
+
+def _create_module_entry(file_path: str, cache: dict = None) -> dict:
+    """
+    Create a module entry with proper error handling and optional caching.
+
+    Args:
+        file_path (str): Path to the file
+        cache (dict, optional): Cache dictionary to store line counts
+
+    Returns:
+        dict: Module entry dictionary with LOC and error handling
+    """
+    if cache is None:
+        cache = {}
+
+    # Check cache first
+    if file_path in cache:
+        loc = cache[file_path]
+    else:
+        # Create new module entry with comprehensive error handling for count_lines
+        try:
+            loc = count_lines(file_path)
+        except FileNotFoundError:
+            # File was processed during analysis but no longer exists
+            loc = None
+        except PermissionError:
+            # No permission to read the file
+            loc = None
+        except IsADirectoryError:
+            # Path is a directory, not a file
+            loc = None
+        except UnicodeDecodeError:
+            # File encoding issues
+            loc = None
+        except OSError:
+            # Other file system errors
+            loc = None
+        finally:
+            cache[file_path] = loc
+
+    return {
+        "file": file_path,
+        "loc": loc,
+        "total_complexity": 0,
+        "function_count": 0,
+        "max_complexity": 0
+    }
+
 
 def count_lines(file_path: str) -> int:
     """
@@ -869,6 +928,56 @@ def compute_metrics(complexities):
         "max_complexity": max_c,
         "refactoring_pressure": rp,
         "top_complexities": top_complexities
+    }
+
+
+def compute_metrics_with_modules(modules_data, functions_data):
+    """
+    Compute metrics for both function-level and module-level data.
+
+    Args:
+        modules_data: List of dictionaries containing module-level metrics
+        functions_data: List of dictionaries containing function-level metrics
+
+    Returns:
+        dict: Dictionary with computed metrics including function metrics,
+               module metrics, and final weighted refactoring pressure
+    """
+    # Calculate function-level metrics
+    function_metrics = compute_metrics(functions_data)
+
+    # Calculate module-level metrics
+    if not modules_data:
+        module_rp = 0
+        top_modules = []
+    else:
+        # Calculate module RP using the MRP formula
+        module_rp = calculate_mrp({
+            "total_complexity": sum(m.get("total_complexity", 0) for m in modules_data),
+            "max_complexity": max(m.get("max_complexity", 0) for m in modules_data),
+            "loc": sum(m.get("loc", 0) for m in modules_data)
+        })
+
+        # Get top 10 most complex modules
+        top_modules = sorted(
+            modules_data,
+            key=lambda x: x.get("max_complexity", 0),
+            reverse=True
+        )[:10]
+
+    # Calculate final RP using weighted average (70% function, 30% module)
+    final_rp = int(0.7 * function_metrics["refactoring_pressure"] + 0.3 * module_rp)
+
+    return {
+        "function_metrics": {
+            "refactoring_pressure": function_metrics["refactoring_pressure"],
+            "top_complexities": function_metrics["top_complexities"]
+        },
+        "module_metrics": {
+            "module_rp": module_rp,
+            "top_modules": top_modules
+        },
+        "final_rp": final_rp
     }
 
 
