@@ -285,6 +285,21 @@ console.log(JSON.stringify(output));
 
 
 # -----------------------
+# UTILS
+# -----------------------
+
+def count_lines(file_path):
+    """Count lines of code in a file"""
+    if not os.path.exists(file_path):
+        return 0
+
+    with open(file_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+
+    return len(lines)
+
+
+# -----------------------
 # METRICS
 # -----------------------
 
