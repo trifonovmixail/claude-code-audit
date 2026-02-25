@@ -88,39 +88,65 @@ def analyze_python_with_modules(path):
 
     Returns:
         dict: A dictionary containing modules and functions data
-    """
-    # Get function-level analysis using existing function
-    functions_data = analyze_python(path)
 
-    # Collect module-level data
-    modules_data = []
+    Raises:
+        RuntimeError: If radon fails to analyze the code
+        ValueError: If no valid functions are found
+    """
+    try:
+        # Get function-level analysis using existing function
+        functions_data = analyze_python(path)
+    except RuntimeError as e:
+        raise RuntimeError(f"Radon analysis failed: {str(e)}")
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Invalid JSON response from radon: {str(e)}")
+
+    if not functions_data:
+        return {
+            "modules": [],
+            "functions": []
+        }
+
+    # Use dictionary for O(1) module lookups instead of list with O(n) lookups
+    modules_dict = {}
 
     for func_data in functions_data:
         file_path = func_data["file"]
 
-        # Check if module already exists in the list
-        existing_module = next((m for m in modules_data if m["file"] == file_path), None)
+        if file_path not in modules_dict:
+            # Create new module entry with error handling for count_lines
+            try:
+                loc = count_lines(file_path)
+            except (FileNotFoundError, PermissionError, OSError) as e:
+                # Log error and use None for LOC when file is inaccessible
+                loc = None
+                # In a real implementation, you might want to log this
+                # import warnings
+                # warnings.warn(f"Failed to count lines for {file_path}: {str(e)}")
 
-        if existing_module:
-            # Update existing module data
-            existing_module["function_count"] += 1
-            existing_module["total_complexity"] += func_data["complexity"]
-            existing_module["max_complexity"] = max(existing_module["max_complexity"], func_data["complexity"])
-        else:
-            # Create new module entry
-            loc = count_lines(file_path)
-            modules_data.append({
+            modules_dict[file_path] = {
                 "file": file_path,
                 "loc": loc,
-                "total_complexity": func_data["complexity"],
-                "avg_complexity": func_data["complexity"],  # Will be recalculated later
-                "function_count": 1,
-                "max_complexity": func_data["complexity"]
-            })
+                "total_complexity": 0,
+                "function_count": 0,
+                "max_complexity": 0
+            }
 
-    # Calculate average complexity for each module
-    for module in modules_data:
-        module["avg_complexity"] = module["total_complexity"] / module["function_count"]
+        # Update module data
+        module = modules_dict[file_path]
+        module["function_count"] += 1
+        module["total_complexity"] += func_data["complexity"]
+        module["max_complexity"] = max(module["max_complexity"], func_data["complexity"])
+
+    # Calculate average complexity for each module with zero division protection
+    modules_data = []
+    for file_path, module in modules_dict.items():
+        if module["function_count"] > 0:
+            module["avg_complexity"] = module["total_complexity"] / module["function_count"]
+        else:
+            module["avg_complexity"] = 0
+
+        modules_data.append(module)
 
     return {
         "modules": modules_data,
@@ -328,6 +354,34 @@ console.log(JSON.stringify(output));
         except subprocess.CalledProcessError as e:
             print(f"⚠️ JS-анализ не удался: {e.stderr}")
             return []
+
+
+def calculate_mrp(module_data):
+    """Calculate Module Refactoring Pressure"""
+    total_complexity = module_data.get("total_complexity", 0)
+    max_complexity = module_data.get("max_complexity", 0)
+    loc = module_data.get("loc", 0)
+
+    # Calculate complexity density
+    if loc > 0:
+        complexity_density = (total_complexity / loc) * 100
+    else:
+        complexity_density = 0
+
+    # Calculate LOC factor
+    loc_factor = 0
+    if 1000 <= loc < 2000:
+        loc_factor = 5
+    elif 2000 <= loc < 5000:
+        loc_factor = 10
+    elif loc >= 5000:
+        loc_factor = 15
+
+    # MRP formula
+    mrp = int(0.4 * complexity_density + 0.4 * max_complexity + 0.2 * loc_factor)
+
+    # Clamp between 0 and 100
+    return max(0, min(100, mrp))
 
 
 # -----------------------
