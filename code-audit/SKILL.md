@@ -1,6 +1,6 @@
 ---
 name: code-audit
-description: "Code refactoring advisor with module-level analysis"
+description: "Code refactoring advisor"
 ---
 
 # Code Refactoring Advisor
@@ -250,26 +250,71 @@ Where:
 
 ---
 
-## 6. Agent JSON Output
+## 6. Report Format
 
-Always return strictly the following JSON:
+Return a structured markdown report with the following sections:
 
-```json
-{
-  "status": "ok" | "warning" | "critical",
-  "risk_level": "low" | "medium" | "high" | "critical",
-  "rp": <refactoring_pressure>,
-  "instructions": [
-    "Split function 'process_data' in file 'app/data.py' into subfunctions",
-    "Reduce nesting in function 'calculate_metrics' in file 'app/metrics.py'"
-  ],
-  "summary": "RP exceeds threshold. Main problematic functions: process_data, calculate_metrics"
-}
-```
+### 1. Summary
 
-* instructions: max 10 items, ≤120 characters each
-* summary: one line, ≤150 characters
-* No extra fields
+| Metric                    | Value   |
+|---------------------------|---------|
+| Status                    | ok/warning/critical |
+| Risk Level                | low/medium/high/critical |
+| Refactoring Pressure (RP) | <value> |
+| Function RP               | <value> |
+| Module RP                 | <value> |
+
+### 2. Problematic Functions
+
+Table of functions with complexity > 20 (from `top_function_complexities`):
+
+| Function | File | Cyclomatic Complexity |
+|----------|------|----------------------|
+| ...      | ...  | ...                  |
+
+### 3. Problematic Modules
+
+Table of modules with highest Module RP (from `top_file_complexities`):
+
+| File | LOC | Functions | Avg Complexity | Max Complexity | Module RP |
+|------|-----|-----------|----------------|----------------|-----------|
+| ...  | ... | ...       | ...            | ...            | ...       |
+
+Highlight modules with:
+- High Module RP (≥50)
+- Large files (LOC ≥ 500)
+- High average complexity (≥ 10)
+
+### 4. Refactoring Recommendations
+
+Actionable recommendations as bullet points (NOT raw JSON):
+
+For functions (complexity ≥ 30):
+- "Split function 'X' in file 'Y' into subfunctions"
+- "Reduce nesting in function 'X' in file 'Y'"
+
+For modules:
+- "Split file 'X' (N LOC) into multiple modules"
+- "Extract utilities from module 'X' to reduce complexity"
+
+General:
+- "Consider refactoring high-complexity areas"
+
+### 5. Key Takeaways
+
+Numbered list with:
+1. Overall code quality assessment based on RP and status
+2. Root cause of warning/critical status (which condition triggered it)
+3. Priority files/functions requiring immediate attention
+4. Long-term recommendations if applicable
+
+---
+
+**Important:**
+- Do NOT return raw JSON in the report
+- Parse the codeaudit output and present it as formatted markdown
+- Adapt section content based on actual data (skip empty sections)
+- Use user's language for section headers if detected, otherwise English
 
 ---
 
@@ -299,18 +344,11 @@ Always return strictly the following JSON:
    - Read `status` field from JSON: "ok", "warning", or "critical"
    - If `--threshold` was specified, check if exit code is 2 (RP > threshold)
 
-4. **Sort Functions**
-   - Sort `top_function_complexities` by descending complexity
-   - Select top functions for refactoring recommendations
+4. **Build Report**
+   - Parse `top_function_complexities` for problematic functions
+   - Parse `top_file_complexities` for problematic modules
+   - Generate recommendations based on complexity thresholds
 
-5. **Generate Instructions**
-   - Create clear, actionable instructions (≤10 items, ≤120 characters each)
-   - Focus on: splitting functions, reducing nesting, extracting code, simplifying logic
-
-6. **Generate Summary**
-   - Create a concise summary (≤150 characters)
-   - Mention main problematic functions and risk level
-
-7. **Return JSON**
-   - Follow the strict schema: status, risk_level, rp, instructions, summary
-   - No extra fields allowed
+5. **Return Markdown Report**
+   - Follow the format from Section 6
+   - Do NOT return raw JSON
