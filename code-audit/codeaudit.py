@@ -12,6 +12,12 @@ from pathlib import Path
 FUNCTION_WEIGHT = 0.7
 MODULE_WEIGHT = 0.3
 
+# Status thresholds
+CRITICAL_RP_THRESHOLD = 75       # RP >= this value triggers critical status
+WARNING_RP_THRESHOLD = 50        # RP >= this value triggers warning status
+CRITICAL_COMPLEXITY_THRESHOLD = 50  # max_complexity >= this value triggers critical
+WARNING_COMPLEXITY_THRESHOLD = 30   # max_complexity >= this value triggers warning
+
 
 # -----------------------
 # LANGUAGE DETECTION
@@ -205,19 +211,23 @@ def analyze_go(path: str, timeout: int = 60) -> list:
 
         import (
             "encoding/json"
-            "fmt"
             "go/ast"
             "go/parser"
             "go/token"
             "os"
             "path/filepath"
-            "time"
+            "strings"
+            "sync"
         )
 
         type FuncComplexity struct {
             Function   string `json:"function"`
             File       string `json:"file"`
             Complexity int    `json:"complexity"`
+        }
+
+        type AnalysisJob struct {
+            Path string
         }
 
         func cyclomatic(fn *ast.FuncDecl) int {
@@ -233,45 +243,72 @@ def analyze_go(path: str, timeout: int = 60) -> list:
             return c
         }
 
+        func analyzeFile(job AnalysisJob, fset *token.FileSet, results *[]FuncComplexity, mu *sync.Mutex) {
+            node, err := parser.ParseFile(fset, job.Path, nil, 0)
+            if err != nil {
+                return
+            }
+
+            fileResults := make([]FuncComplexity, 0)
+            for _, decl := range node.Decls {
+                if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name != nil {
+                    fileResults = append(fileResults, FuncComplexity{
+                        Function: fn.Name.Name,
+                        File: job.Path,
+                        Complexity: cyclomatic(fn),
+                    })
+                }
+            }
+
+            mu.Lock()
+            *results = append(*results, fileResults...)
+            mu.Unlock()
+        }
+
         func main() {
             if len(os.Args) < 2 {
-                fmt.Println("Usage: analyzer <path>")
                 os.Exit(1)
             }
 
-            start := time.Now()
             root := os.Args[1]
-            var results []FuncComplexity
-            fset := token.NewFileSet()
 
+            var goFiles []string
             filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
                 if err != nil { return nil }
-                if filepath.Ext(path) != ".go" || filepath.Base(path) == "_test.go" {
-                    return nil
-                }
-
-                // Check if we've exceeded timeout (approximately)
-                if time.Since(start).Seconds() > 50 { // Leave some buffer
-                    return fmt.Errorf("analysis timeout")
-                }
-
-                node, err := parser.ParseFile(fset, path, nil, 0)
-                if err != nil {
-                    // Parse errors shouldn't stop the analysis
-                    return nil
-                }
-
-                for _, decl := range node.Decls {
-                    if fn, ok := decl.(*ast.FuncDecl); ok {
-                        results = append(results, FuncComplexity{
-                            Function: fn.Name.Name,
-                            File: path,
-                            Complexity: cyclomatic(fn),
-                        })
-                    }
+                if filepath.Ext(path) == ".go" && !strings.HasSuffix(filepath.Base(path), "_test.go") {
+                    goFiles = append(goFiles, path)
                 }
                 return nil
             })
+
+            if len(goFiles) > 500 {
+                goFiles = goFiles[:500]
+            }
+
+            var results []FuncComplexity
+            var wg sync.WaitGroup
+            var mu sync.Mutex
+
+            fset := token.NewFileSet()
+            jobs := make(chan AnalysisJob, len(goFiles))
+
+            maxWorkers := 10
+            for i := 0; i < maxWorkers; i++ {
+                wg.Add(1)
+                go func() {
+                    defer wg.Done()
+                    for job := range jobs {
+                        analyzeFile(job, fset, &results, &mu)
+                    }
+                }()
+            }
+
+            for _, file := range goFiles {
+                jobs <- AnalysisJob{Path: file}
+            }
+            close(jobs)
+
+            wg.Wait()
 
             json.NewEncoder(os.Stdout).Encode(results)
         }
@@ -1111,9 +1148,13 @@ def determine_status(metrics, function_metrics, module_metrics):
     max_module = max(m.get("max_complexity", 0) for m in module_metrics["top_modules"])
     final_rp = metrics["final_rp"]
 
-    if final_rp >= 75 or max_func >= 20 or max_module >= 20:
+    if (final_rp >= CRITICAL_RP_THRESHOLD or
+        max_func >= CRITICAL_COMPLEXITY_THRESHOLD or
+        max_module >= CRITICAL_COMPLEXITY_THRESHOLD):
         return "critical"
-    elif final_rp >= 50 or max_func >= 15 or max_module >= 15:
+    elif (final_rp >= WARNING_RP_THRESHOLD or
+          max_func >= WARNING_COMPLEXITY_THRESHOLD or
+          max_module >= WARNING_COMPLEXITY_THRESHOLD):
         return "warning"
     else:
         return "ok"
@@ -1357,10 +1398,15 @@ def main():
                     print("\n=== CODEAUDIT REPORT ===\n")
                     print(json.dumps(output, indent=2))
 
-                if output["status"] == "critical":
-                    sys.exit(2)
-                elif output["status"] == "warning":
-                    sys.exit(1)
+                # Use --threshold if provided, otherwise use built-in status
+                if args.threshold is not None:
+                    if output["rp"] > args.threshold:
+                        sys.exit(2)
+                else:
+                    if output["status"] == "critical":
+                        sys.exit(2)
+                    elif output["status"] == "warning":
+                        sys.exit(1)
 
             except (RuntimeError, ValueError) as e:
                 # Fallback to legacy analysis if module analysis fails

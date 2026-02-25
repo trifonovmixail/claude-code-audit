@@ -161,10 +161,11 @@ Fields:
 
 ## 3. Agent Actions
 
-1. **Threshold Check**
+1. **Status Check**
 
-* If `threshold_exceeded = true` → code is too complex → status = `critical` or `warning` (see below)
-* If `threshold_exceeded = false` → code is OK → status = `ok`
+* `status = "critical"` → code needs immediate refactoring attention
+* `status = "warning"` → code has complexity issues, refactoring recommended
+* `status = "ok"` → code quality is acceptable
 
 2. **Sorting Functions by Criticality**
 
@@ -189,7 +190,7 @@ Fields:
 
   * "Split file `<file>` into multiple modules"
 
-4. **Proactive Measures (if `threshold_exceeded = false`)**
+4. **Proactive Measures (if `status = "ok"`)**
 
 * Monitor functions with complexity > p90
 * Maintain a consistent style guide
@@ -203,21 +204,49 @@ Fields:
 
 ## 4. Multi-Language Project
 
-* Run `codeaudit` for each language (Python, Go, JS), based on project file structure
-* RP = max(RP across languages)
-* instructions = merge top instructions across languages
-* summary = briefly list language and problematic functions
+`codeaudit` automatically detects all languages in the project and analyzes them in a single run.
+
+* Single scan analyzes Python, Go, and JavaScript/TypeScript files
+* Output includes combined metrics and instructions
+* Focus on the highest complexity functions across all languages
 
 ---
 
 ## 5. Status and Risk Level Formula
 
-| RP    | status   | risk_level |
-| ----- | -------- | ---------- |
-| <20   | ok       | low        |
-| 20–50 | warning  | medium     |
-| 51–75 | critical | high       |
-| >75   | critical | critical   |
+### Status Determination
+
+Status is determined by three factors (any condition triggers the status):
+
+| Status    | Conditions                                                                |
+| --------- | ------------------------------------------------------------------------- |
+| `ok`      | `RP < 50` AND `max_func_complexity < 30` AND `max_module_complexity < 30` |
+| `warning` | `RP >= 50` OR `max_func_complexity >= 30` OR `max_module_complexity >= 30` |
+| `critical`| `RP >= 75` OR `max_func_complexity >= 50` OR `max_module_complexity >= 50` |
+
+Where:
+- `RP` — final Refactoring Pressure score (70% function RP + 30% module RP)
+- `max_func_complexity` — highest cyclomatic complexity among all functions
+- `max_module_complexity` — highest max_complexity among all modules/files
+
+### Risk Level (based on RP only)
+
+| RP Score | Risk Level |
+| -------- | ---------- |
+| 0–20     | low        |
+| 21–50    | medium     |
+| 51–75    | high       |
+| 76–100   | critical   |
+
+### Exit Codes
+
+| Exit Code | When It Occurs                                      |
+| --------- | --------------------------------------------------- |
+| 0         | Analysis completed, no thresholds exceeded          |
+| 1         | Status is `warning` (without `--threshold`)         |
+| 2         | Status is `critical` OR RP > `--threshold` value    |
+
+> **Note:** When `--threshold` is specified, exit code 2 is determined **only** by comparing RP to the threshold value.
 
 ---
 
@@ -261,36 +290,27 @@ Always return strictly the following JSON:
    - If missing dependencies exist and `--install` is available, use it
    - Proceed only if all required dependencies are installed
 
-2. **Determine Project Languages**
-   - Use `check-deps` output to identify all languages in the project
-   - For single-language projects, proceed with that language
-   - For multi-language projects, plan to analyze each language
-
-3. **Run Analysis**
-   - Run `codeaudit scan <path> --format json --threshold <value> -v` for each language
+2. **Run Analysis**
+   - Run `codeaudit scan <path> --format json --threshold <value> -v`
+   - The tool automatically detects all languages in the project
    - Read and parse the JSON output
 
-4. **Check Threshold**
-   - Check `threshold_exceeded` flag in the JSON
-   - Determine if code is too complex (status = critical/warning) or OK (status = ok)
+3. **Check Status**
+   - Read `status` field from JSON: "ok", "warning", or "critical"
+   - If `--threshold` was specified, check if exit code is 2 (RP > threshold)
 
-5. **Sort Functions**
-   - Sort `top_complexities` by descending complexity
+4. **Sort Functions**
+   - Sort `top_function_complexities` by descending complexity
    - Select top functions for refactoring recommendations
 
-6. **Generate Instructions**
+5. **Generate Instructions**
    - Create clear, actionable instructions (≤10 items, ≤120 characters each)
    - Focus on: splitting functions, reducing nesting, extracting code, simplifying logic
 
-7. **Generate Summary**
+6. **Generate Summary**
    - Create a concise summary (≤150 characters)
    - Mention main problematic functions and risk level
 
-8. **Handle Multi-Language Projects**
-   - Use maximum RP across all languages
-   - Merge instructions from all languages
-   - Create combined summary
-
-9. **Return JSON**
+7. **Return JSON**
    - Follow the strict schema: status, risk_level, rp, instructions, summary
    - No extra fields allowed

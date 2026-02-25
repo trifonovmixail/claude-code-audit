@@ -151,10 +151,55 @@ After running the scan, the JSON or CLI report contains:
 | -------- | ---------- | -------------------------------------------------- |
 | 0–20     | Low        | Code is simple and maintainable                    |
 | 21–50    | Medium     | Some functions may need refactoring                |
-| 51–80    | High       | Code is complex; refactoring recommended           |
-| 81–100   | Critical   | Code is very complex; immediate attention required |
+| 51–75    | High       | Code is complex; refactoring recommended           |
+| 76–100   | Critical   | Code is very complex; immediate attention required |
 
-> `threshold_exceeded` is `true` if RP exceeds a user-defined threshold (default 60).
+### Status Determination
+
+The `status` field is determined by three factors (any condition triggers the status):
+
+| Status    | Conditions                                                              |
+| --------- | ----------------------------------------------------------------------- |
+| `ok`      | `RP < 50` AND `max_func_complexity < 30` AND `max_module_complexity < 30` |
+| `warning` | `RP >= 50` OR `max_func_complexity >= 30` OR `max_module_complexity >= 30` |
+| `critical`| `RP >= 75` OR `max_func_complexity >= 50` OR `max_module_complexity >= 50` |
+
+Where:
+- `RP` — final Refactoring Pressure score (70% function RP + 30% module RP)
+- `max_func_complexity` — highest cyclomatic complexity among all functions
+- `max_module_complexity` — highest max_complexity among all modules/files
+
+> **Note:** These thresholds are configurable constants in `codeaudit.py`:
+> - `CRITICAL_RP_THRESHOLD = 75`
+> - `WARNING_RP_THRESHOLD = 50`
+> - `CRITICAL_COMPLEXITY_THRESHOLD = 50`
+> - `WARNING_COMPLEXITY_THRESHOLD = 30`
+
+### Exit Codes
+
+| Exit Code | Meaning                    | When It Occurs                                    |
+| --------- | -------------------------- | ------------------------------------------------- |
+| 0         | Success                    | Analysis completed, no thresholds exceeded        |
+| 1         | Warning                    | Status is `warning` (without `--threshold`)       |
+| 2         | Critical / Threshold       | Status is `critical` OR RP > `--threshold` value  |
+
+#### Exit Code Examples
+
+```bash
+# Exit code 2: status is "critical" (max_complexity >= 20)
+python codeaudit.py scan ./my_project
+
+# Exit code 0: RP (14) <= threshold (60)
+python codeaudit.py scan ./my_project --threshold 60
+
+# Exit code 2: RP (14) > threshold (10)
+python codeaudit.py scan ./my_project --threshold 10
+
+# Exit code 1: status is "warning" (no threshold, but max_complexity >= 15)
+python codeaudit.py scan ./my_project
+```
+
+> **Note:** When `--threshold` is specified, exit code 2 is determined **only** by comparing RP to the threshold value. Built-in status rules are ignored.
 
 ### Top Complexities
 
