@@ -18,7 +18,6 @@ WARNING_RP_THRESHOLD = 50        # RP >= this value triggers warning status
 CRITICAL_COMPLEXITY_THRESHOLD = 50  # max_complexity >= this value triggers critical
 WARNING_COMPLEXITY_THRESHOLD = 30   # max_complexity >= this value triggers warning
 
-
 # -----------------------
 # LANGUAGE DETECTION
 # -----------------------
@@ -59,7 +58,6 @@ def detect_language(path):
                 lang_counts["javascript"] = lang_counts.get("javascript", 0) + 1
 
     return max(lang_counts, key=lang_counts.get) if lang_counts else None
-
 
 # -----------------------
 # ANALYZERS
@@ -373,12 +371,6 @@ def analyze_go_with_modules(path: str, timeout: int = 60) -> dict:
         raise ValueError(f"Path is not a directory: {path}")
 
     try:
-        # Get function-level analysis using existing function with timeout
-        import signal
-        import tempfile
-        import subprocess
-        from pathlib import Path
-
         # Create a timeout wrapper for subprocess
         def run_with_timeout(cmd, timeout_seconds, cwd=None):
             """Run subprocess with timeout"""
@@ -793,9 +785,6 @@ def calculate_mrp(module_data: dict) -> int:
     # Clamp between 0 and 100 to ensure valid percentage
     return max(0, min(100, mrp))
 
-
-
-
 # -----------------------
 # UTILS
 # -----------------------
@@ -899,7 +888,6 @@ def count_lines(file_path: str) -> int:
         raise ValueError(f"File is not valid UTF-8 encoded: {file_path}")
     except OSError as e:
         raise OSError(f"Error reading file {file_path}: {e}")
-
 
 # -----------------------
 # METRICS
@@ -1249,7 +1237,6 @@ def risk_level(rp):
         return "high"
     return "critical"
 
-
 # -----------------------
 # DEPENDENCY MANAGEMENT
 # -----------------------
@@ -1361,7 +1348,6 @@ def install_js_deps():
     except subprocess.CalledProcessError as e:
         print(f"❌ Failed to install JS deps: {e}")
         return False
-
 
 # -----------------------
 # CLI
