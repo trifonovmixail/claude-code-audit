@@ -12,7 +12,7 @@ Now with **module-level analysis** that considers file size (Lines of Code) in r
 Install in one line:
 
 ```bash
-eval "$(curl -s https://raw.githubusercontent.com/trifonovmixail/claude-code-audit/main/install.sh)"
+curl -s https://raw.githubusercontent.com/trifonovmixail/claude-code-audit/main/install.sh | /bin/sh
 ```
 
 Or download and run the script:
