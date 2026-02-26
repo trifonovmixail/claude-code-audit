@@ -13,8 +13,8 @@ FUNCTION_WEIGHT = 0.7
 MODULE_WEIGHT = 0.3
 
 # Status thresholds
-CRITICAL_RP_THRESHOLD = 75       # RP >= this value triggers critical status
-WARNING_RP_THRESHOLD = 50        # RP >= this value triggers warning status
+CRITICAL_RP_THRESHOLD = 75          # RP >= this value triggers critical status
+WARNING_RP_THRESHOLD = 50           # RP >= this value triggers warning status
 CRITICAL_COMPLEXITY_THRESHOLD = 50  # max_complexity >= this value triggers critical
 WARNING_COMPLEXITY_THRESHOLD = 30   # max_complexity >= this value triggers warning
 
