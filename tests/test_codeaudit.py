@@ -200,14 +200,18 @@ class TestCodeAuditCLI(unittest.TestCase):
 
     def test_cli_scan_simple(self):
         """Тест CLI scan на простом Python коде"""
-        # Создаем простой Python файл
-        with open(os.path.join(self.test_dir, "simple.py"), "w") as f:
+        # Создаем отдельную директорию для тестовых файлов
+        # (чтобы не анализировать скопированный codeaudit.py)
+        test_files_dir = os.path.join(self.test_dir, "test_files")
+        os.makedirs(test_files_dir)
+
+        with open(os.path.join(test_files_dir, "simple.py"), "w") as f:
             f.write("def hello():\n    print('Hello')\n")
 
         # Запускаем команду
         result = subprocess.run([
             sys.executable, self.test_script_path,
-            "scan", self.test_dir,
+            "scan", test_files_dir,
             "--format", "json"
         ], capture_output=True, text=True)
 
@@ -225,7 +229,8 @@ class TestCodeAuditCLI(unittest.TestCase):
 
         # Проверяем наличие ожидаемых полей в выводе
         self.assertIn("language", output)
-        self.assertIn("summary", output)
+        self.assertIn("status", output)
+        self.assertIn("rp", output)
         self.assertIn("risk_level", output)
         self.assertEqual(output["language"], "python")
 
