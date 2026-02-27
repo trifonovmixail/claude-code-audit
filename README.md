@@ -53,7 +53,7 @@ Once installed, the skill can be invoked by Claude to run automated complexity s
    * For **JavaScript/TypeScript**, it uses a **temporary Node.js script with `acorn` and `acorn-walk`** to parse modern JS/TS syntax and compute cyclomatic complexity per function.
 
 3. **Module-Level Analysis**
-   CodeAudit now includes comprehensive module-level analysis with MRP (Module Refactoring Pressure):
+   CodeAudit includes comprehensive module-level analysis with MRP (Module Refactoring Pressure):
 
    * **Function Analysis**: Cyclomatic complexity per function
    * **Module Analysis**: File size (LOC), total complexity, average complexity
