@@ -69,7 +69,7 @@ Once installed, the skill can be invoked by Claude to run automated complexity s
 | `p90_complexity`          | 90th percentile cyclomatic complexity (upper tail) |
 | `max_complexity`          | Maximum cyclomatic complexity in the codebase      |
 | `top_complexities`        | Top 20 most complex functions                      |
-| `module_rp`                | Module-level refactoring pressure (0-100)          |
+| `module_rp`               | Module-level refactoring pressure (0-100)          |
 | `top_file_complexities`   | Top modules by MRP with LOC and complexity metrics |
 | `LCOM` (Python only)      | Lack of Cohesion in Methods, per class/module      |
 | `cycles` (Go only)        | Number of cycles in call graph                     |
@@ -158,9 +158,9 @@ After running the scan, the JSON or CLI report contains:
 
 The `status` field is determined by three factors (any condition triggers the status):
 
-| Status    | Conditions                                                              |
-| --------- | ----------------------------------------------------------------------- |
-| `ok`      | `RP < 50` AND `max_func_complexity < 30` AND `max_module_complexity < 30` |
+| Status    | Conditions                                                                 |
+| --------- |----------------------------------------------------------------------------|
+| `ok`      | `RP < 50` AND `max_func_complexity < 30` AND `max_module_complexity < 30`  |
 | `warning` | `RP >= 50` OR `max_func_complexity >= 30` OR `max_module_complexity >= 30` |
 | `critical`| `RP >= 75` OR `max_func_complexity >= 50` OR `max_module_complexity >= 50` |
 
