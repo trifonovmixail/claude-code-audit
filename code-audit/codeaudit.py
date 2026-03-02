@@ -5,6 +5,7 @@ import sys
 import json
 import argparse
 import tempfile
+import textwrap
 import subprocess
 from pathlib import Path
 
@@ -179,12 +180,6 @@ def analyze_go(path: str, timeout: int = 60) -> list:
         TimeoutError: If Go analysis exceeds timeout
         RuntimeError: If Go analysis fails
     """
-    import tempfile
-    import textwrap
-    import json
-    import subprocess
-    import os
-
     # Input validation
     if not isinstance(path, str):
         raise TypeError(f"path must be a string, got {type(path).__name__}")
@@ -374,14 +369,14 @@ def analyze_go_with_modules(path: str, timeout: int = 60) -> dict:
         # Create a timeout wrapper for subprocess
         def run_with_timeout(cmd, timeout_seconds, cwd=None):
             """Run subprocess with timeout"""
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=cwd
+            )
             try:
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    cwd=cwd
-                )
                 stdout, stderr = process.communicate(timeout=timeout_seconds)
                 return process.returncode, stdout, stderr
             except subprocess.TimeoutExpired:
@@ -808,23 +803,25 @@ def _create_module_entry(file_path: str, cache: dict = None) -> dict:
         loc = cache[file_path]
     else:
         # Create new module entry with comprehensive error handling for count_lines
+        loc = None
+
         try:
             loc = count_lines(file_path)
         except FileNotFoundError:
             # File was processed during analysis but no longer exists
-            loc = None
+            pass
         except PermissionError:
             # No permission to read the file
-            loc = None
+            pass
         except IsADirectoryError:
             # Path is a directory, not a file
-            loc = None
+            pass
         except UnicodeDecodeError:
             # File encoding issues
-            loc = None
+            pass
         except OSError:
             # Other file system errors
-            loc = None
+            pass
         finally:
             cache[file_path] = loc
 

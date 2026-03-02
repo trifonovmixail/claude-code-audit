@@ -2,6 +2,9 @@ import unittest
 import tempfile
 import os
 
+from codeaudit import analyze_go_with_modules
+
+
 class TestGoModules(unittest.TestCase):
     def setUp(self):
         # Create temporary Go project for testing
@@ -41,11 +44,6 @@ func main() {
             f.write(main_content)
 
     def test_analyze_go_with_modules(self):
-        import sys
-        import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'code-audit'))
-        from codeaudit import analyze_go_with_modules
-
         result = analyze_go_with_modules(self.temp_dir)
         self.assertIsInstance(result, dict)
         self.assertIn("modules", result)
@@ -69,3 +67,7 @@ func main() {
             self.assertIn("function", func)
             self.assertIn("file", func)
             self.assertIn("complexity", func)
+
+
+if __name__ == '__main__':
+    unittest.main()

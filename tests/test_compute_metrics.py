@@ -1,10 +1,7 @@
 import unittest
-import sys
-import os
 
-# Add the code-audit directory to the Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'code-audit'))
 import codeaudit
+
 
 class TestComputeMetrics(unittest.TestCase):
     def test_compute_metrics_with_modules(self):
@@ -118,6 +115,7 @@ class TestComputeMetrics(unittest.TestCase):
             self.assertIn("final_rp", result)
         except Exception as e:
             self.fail(f"compute_metrics_with_modules should handle errors gracefully, but raised: {e}")
+
 
 if __name__ == '__main__':
     unittest.main()

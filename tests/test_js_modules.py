@@ -1,7 +1,9 @@
-# tests/test_js_modules.py
 import unittest
 import tempfile
 import os
+
+from codeaudit import analyze_js_with_modules
+
 
 class TestJSModules(unittest.TestCase):
     def setUp(self):
@@ -50,11 +52,6 @@ module.exports = {
             f.write(main_content)
 
     def test_analyze_js_with_modules(self):
-        import sys
-        import os
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'code-audit'))
-        from codeaudit import analyze_js_with_modules
-
         result = analyze_js_with_modules(self.temp_dir)
         self.assertIsInstance(result, dict)
         self.assertIn("modules", result)
@@ -78,3 +75,7 @@ module.exports = {
             self.assertIn("function", func)
             self.assertIn("file", func)
             self.assertIn("complexity", func)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -1,15 +1,12 @@
-#!/usr/bin/env python3
 import unittest
 import tempfile
 import os
-import sys
 import shutil
-from unittest.mock import patch, mock_open, Mock
+from unittest.mock import patch, Mock
 import json
 
-# Добавляем путь к основному модулю
-sys.path.insert(0, os.path.dirname(__file__) + '/../code-audit')
 import codeaudit
+
 
 class TestModuleAnalysis(unittest.TestCase):
 
@@ -243,6 +240,7 @@ def nested_func(a, b, c):
 
             self.assertEqual(len(result["modules"]), 0)
             self.assertEqual(len(result["functions"]), 0)
+
 
 if __name__ == '__main__':
     unittest.main()

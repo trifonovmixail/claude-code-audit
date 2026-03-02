@@ -3,16 +3,11 @@
 Test suite for CLI commands with module-level analysis.
 """
 
-import json
 import unittest
-from unittest.mock import patch, MagicMock
-import subprocess
+from unittest.mock import patch
 import sys
 import os
 import argparse
-
-# Add the code-audit directory to the path so we can import our modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'code-audit'))
 
 from codeaudit import (
     scan_with_module_analysis,

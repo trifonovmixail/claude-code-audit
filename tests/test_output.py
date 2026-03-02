@@ -3,6 +3,9 @@ import unittest
 import tempfile
 import os
 
+from codeaudit import scan_with_module_analysis
+
+
 class TestOutputStructure(unittest.TestCase):
     def setUp(self):
         # Create temporary project for testing
@@ -29,11 +32,6 @@ def complex_function(x, y):
             f.write(py_content)
 
     def test_json_output_structure(self):
-        import sys
-        import os
-        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'code-audit'))
-        from codeaudit import scan_with_module_analysis
-
         result = scan_with_module_analysis(self.temp_dir, "python")
 
         # Check required top-level fields
@@ -89,3 +87,7 @@ def complex_function(x, y):
         self.assertLessEqual(result["function_rp"], 100)
         self.assertGreaterEqual(result["module_rp"], 0)
         self.assertLessEqual(result["module_rp"], 100)
+
+
+if __name__ == '__main__':
+    unittest.main()

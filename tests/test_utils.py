@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 import unittest
-import sys
 import os
 import tempfile
 import shutil
 
-# Добавляем путь к основному модулю
-sys.path.insert(0, os.path.dirname(__file__) + '/../code-audit')
+import codeaudit
+
 
 class TestUtils(unittest.TestCase):
     def setUp(self):
@@ -25,7 +24,7 @@ class TestUtils(unittest.TestCase):
             f.write("def hello():\n    print('Hello')\n    return True\n")
 
         # Импортируем из основного модуля
-        import codeaudit
+
         count_lines = codeaudit.count_lines
 
         # Проверяем что функция существует
@@ -41,7 +40,6 @@ class TestUtils(unittest.TestCase):
         with open(test_file, "w") as f:
             f.write("")
 
-        import codeaudit
         count_lines = codeaudit.count_lines
         result = count_lines(test_file)
         self.assertEqual(result, 0)
@@ -52,7 +50,6 @@ class TestUtils(unittest.TestCase):
         with open(test_file, "w") as f:
             f.write("\n\n\n")
 
-        import codeaudit
         count_lines = codeaudit.count_lines
         result = count_lines(test_file)
         self.assertEqual(result, 3)
@@ -60,8 +57,6 @@ class TestUtils(unittest.TestCase):
     def test_count_lines_nonexistent_file(self):
         """Тест подсчета строк в несуществующем файле - должен вызывать исключение"""
         nonexistent_file = os.path.join(self.test_dir, "nonexistent.py")
-
-        import codeaudit
         count_lines = codeaudit.count_lines
 
         # Проверяем что функция вызывает исключение для несуществующего файла
@@ -71,8 +66,6 @@ class TestUtils(unittest.TestCase):
     def test_count_lines_invalid_path(self):
         """Тест подсчета строк с недопустимым путем"""
         invalid_path = "/invalid/path/file.py"
-
-        import codeaudit
         count_lines = codeaudit.count_lines
 
         with self.assertRaises(FileNotFoundError):
@@ -80,7 +73,6 @@ class TestUtils(unittest.TestCase):
 
     def test_count_lines_directory_path(self):
         """Тест подсчета строк когда путь указывает на директорию"""
-        import codeaudit
         count_lines = codeaudit.count_lines
 
         with self.assertRaises(IsADirectoryError):
@@ -95,8 +87,6 @@ class TestUtils(unittest.TestCase):
 
         # Удаляем права на чтение
         os.chmod(test_file, 0o000)
-
-        import codeaudit
         count_lines = codeaudit.count_lines
 
         with self.assertRaises(PermissionError):
@@ -117,7 +107,6 @@ class TestUtils(unittest.TestCase):
 
     def test_count_lines_type_validation(self):
         """Тест что функция ожидает строковый путь"""
-        import codeaudit
         count_lines = codeaudit.count_lines
 
         # Проверяем что функция ожидает строку
@@ -132,7 +121,6 @@ class TestUtils(unittest.TestCase):
 
     def test_count_lines_empty_string_path(self):
         """Тест что функция не принимает пустую строку"""
-        import codeaudit
         count_lines = codeaudit.count_lines
 
         with self.assertRaises(ValueError):
@@ -140,11 +128,11 @@ class TestUtils(unittest.TestCase):
 
     def test_count_lines_whitespace_path(self):
         """Тест что функция не принимает строку только с пробелами"""
-        import codeaudit
         count_lines = codeaudit.count_lines
 
         with self.assertRaises(ValueError):
             count_lines("   ")
+
 
 if __name__ == '__main__':
     unittest.main()

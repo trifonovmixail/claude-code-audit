@@ -5,10 +5,10 @@ import os
 import json
 import subprocess
 import sys
+import shutil
 
-# Добавляем путь к основному модулю
-sys.path.insert(0, os.path.dirname(__file__) + '/../code-audit')
 import codeaudit
+
 
 class TestCodeAudit(unittest.TestCase):
 
@@ -18,7 +18,6 @@ class TestCodeAudit(unittest.TestCase):
 
     def tearDown(self):
         """Удаляем временную директорию"""
-        import shutil
         shutil.rmtree(self.test_dir)
 
     def test_detect_languages_python(self):
@@ -233,6 +232,7 @@ class TestCodeAuditCLI(unittest.TestCase):
         self.assertIn("rp", output)
         self.assertIn("risk_level", output)
         self.assertEqual(output["language"], "python")
+
 
 if __name__ == '__main__':
     unittest.main()

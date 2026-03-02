@@ -2,8 +2,8 @@ import unittest
 import sys
 import os
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'code-audit'))
 import codeaudit
+
 
 class TestMRPCalculation(unittest.TestCase):
     def test_calculate_mrp_basic(self):
@@ -229,3 +229,7 @@ class TestMRPCalculation(unittest.TestCase):
         # Should use default values (0) for None
         expected = 0
         self.assertEqual(result, expected)
+
+
+if __name__ == '__main__':
+    unittest.main()
